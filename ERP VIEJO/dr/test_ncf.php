@@ -1,0 +1,1 @@
+<?php define('APP_RUNNING', true); require_once 'config/Database.php'; try { \ = new Database(); \ = \->getConnection(); \ = \->query('SELECT TOP 5 * FROM carga_ncf'); print_r(\->fetchAll(PDO::FETCH_ASSOC)); } catch(Exception \) { echo \->getMessage(); } ?>

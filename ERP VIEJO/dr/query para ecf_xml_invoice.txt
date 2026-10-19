@@ -1,0 +1,17 @@
+ Map<String, Object> vResult1 = null;
+                                vResult1 = dbConn.getSelectAssocFirstRow(" SELECT C_DocEntry, U_SCIADocNum, U_SCIASerie, NumAtCard, u_facnum,u_facserie,ExtraDays, IsNull(U_NCFVence,'') as NCFVence, u_facnit, u_facfecha FROM cms.dbo.POSOINV WHERE U_FacFecha ='" + vPagoCoopResult.get("FECHA").get(j).toString() + "' AND C_ControlIndex = 0" + vControlIndex + " AND U_user = 'COOPCARIBE'  ");
+                                // INSERTA VALORES EN LA TABLA DE EFC-XML DGII
+
+                                if (vResult1 != null) {
+                                    String vPages = "N";
+                                    if (toInteger(vResult1.get("ExtraDays").toString()) > 1) {
+                                        vPages = "Y";
+                                    }
+                                    vC_DocEntry = Integer.parseInt(vResult1.get("C_DocEntry").toString());
+                                    int vU_SCIADocNum = Integer.parseInt(vResult1.get("U_SCIADocNum").toString());
+                                    String vU_SCIASerie = vResult1.get("U_SCIASerie").toString()
+                                    String vNumAtCard = vResult1.get("NumAtCard").toString();
+
+                                    String vSqlxML = " INSERT INTO cms.dbo.[ecf_xml_invoice] (doc_id, NumAtCard, ecf_type, ecf,xml_file_name,ecf_print_pages,ecf_vence, ecf_rnc_emisor, ecf_rnc_comprador, ecf_invoice_date ) "
+                                            + "VALUES ( " + vResult1.get("C_DocEntry").toString() + ",'" + vResult1.get("NumAtCard").toString() + "','" + vResult1.get("u_facserie").toString() + "','" + vResult1.get("u_facnum").toString() + "','430019291" + vResult1.get("u_facnum").toString() + "','" + vPages + "','" + vResult1.get("NCFVence").toString() + "','RNC DE COOPCARIBE','" + vResult1.get("u_facnit").toString() + "','" + vResult1.get("u_facfecha").toString() + "')";
+                                    //dao.runSQL(vSql);

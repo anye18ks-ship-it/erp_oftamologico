@@ -1,0 +1,780 @@
+/* ==========================================================================
+   FACTURA_VENTA.CSS - Point of Sale & Invoicing (ERP Oftalmológico)
+   ========================================================================== */
+
+.facturacion-container {
+    padding: 10px 0 35px;
+}
+
+/* Header de Página */
+.page-header-module {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.page-header-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.page-header-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+    color: #0284c7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    box-shadow: 0 4px 10px rgba(2, 132, 199, 0.12);
+}
+
+.page-title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
+.page-subtitle {
+    font-size: 0.82rem;
+    color: #64748b;
+    margin: 2px 0 0;
+    font-weight: 500;
+}
+
+/* Card Encabezado de Factura */
+.fac-header-card {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.fac-header-card-top {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.fac-card-body {
+    padding: 20px;
+}
+
+.form-label-pos {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.input-pos {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 0.88rem;
+    color: #0f172a;
+    transition: all 0.2s ease;
+}
+
+.input-pos:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+    outline: none;
+}
+
+.input-pos-readonly {
+    background-color: #f8fafc;
+    color: #334155;
+}
+
+/* Detalle de Artículos Card */
+.fac-detail-card {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+}
+
+.fac-detail-card-header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #ffffff;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.fac-table-wrapper {
+    max-height: 48vh;
+    overflow-y: auto;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.table-pos {
+    width: 100%;
+    margin-bottom: 0;
+    border-collapse: collapse;
+}
+
+.table-pos thead th {
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.table-pos tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color 0.15s ease;
+}
+
+.table-pos tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+.table-pos tbody td {
+    padding: 8px 12px;
+    vertical-align: middle;
+    font-size: 0.86rem;
+}
+
+.input-table-qty, .input-table-desc, .input-table-disc {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-size: 0.86rem;
+    transition: all 0.15s ease;
+}
+
+.input-table-qty:focus, .input-table-desc:focus, .input-table-disc:focus {
+    border-color: #0284c7;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+}
+
+.desc-editable-highlight {
+    background-color: #fefce8;
+    border-color: #fef08a;
+    font-weight: 500;
+}
+
+/* Footer / Totales Section */
+.fac-footer-section {
+    background: #f8fafc;
+    padding: 20px 24px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.totals-summary-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 0.9rem;
+}
+
+.total-row-label {
+    color: #64748b;
+    font-weight: 600;
+}
+
+.total-row-val {
+    color: #0f172a;
+    font-weight: 700;
+    font-family: monospace;
+}
+
+.total-general-row {
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 2px solid #e2e8f0;
+}
+
+.total-general-label {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.total-general-val {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #0284c7;
+    font-family: monospace;
+}
+
+.btn-process-invoice {
+    width: 100%;
+    padding: 14px 24px;
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    box-shadow: 0 4px 14px rgba(2, 132, 199, 0.25);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.btn-process-invoice:hover {
+    background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+    box-shadow: 0 6px 18px rgba(2, 132, 199, 0.35);
+    transform: translateY(-1px);
+}
+
+.btn-process-invoice:active {
+    transform: translateY(0);
+}
+
+.btn-process-invoice.btn-cobertura-total {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+    border: none !important;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35) !important;
+}
+
+.btn-process-invoice.btn-cobertura-total:hover {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%) !important;
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45) !important;
+    transform: translateY(-1px);
+}
+
+/* Modals Styling */
+.modal-dialog.modal-pacientes-custom {
+    max-width: 1080px;
+    margin: 1.75rem auto;
+}
+
+.modal-pos-header {
+    padding: 16px 24px;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-pos-header.cliente {
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.modal-pos-header.articulo {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.modal-search-bar {
+    position: relative;
+    margin-bottom: 14px;
+}
+
+.modal-search-bar input {
+    width: 100%;
+    padding: 11px 16px 11px 44px;
+    border-radius: 12px;
+    border: 1.5px solid #cbd5e1;
+    font-size: 0.92rem;
+    background-color: #f8fafc;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-search-bar input:focus {
+    border-color: #0284c7;
+    background-color: #ffffff;
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(2, 132, 199, 0.12);
+}
+
+.modal-search-bar i {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+    font-size: 1.15rem;
+}
+
+/* Tabla de Selección de Pacientes */
+.table-modal-clientes {
+    width: 100%;
+    margin-bottom: 0;
+    font-size: 0.88rem;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.table-modal-clientes thead th {
+    background-color: #f8fafc;
+    color: #475569;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 12px 14px;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+}
+
+.table-modal-clientes tbody td {
+    padding: 7px 12px;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.table-modal-clientes tbody tr {
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.table-modal-clientes tbody tr:hover {
+    background-color: #f1f5f9 !important;
+}
+
+/* Badge Expediente Mini */
+.badge-exp-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    font-size: 0.70rem;
+    font-weight: 700;
+    color: #475569;
+    background-color: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+/* Filas Priorizadas */
+.row-prioridad-1 {
+    background-color: #fffbeb !important; /* Ámbar suave */
+    border-left: 4px solid #f59e0b;
+}
+
+.row-prioridad-2 {
+    background-color: #fefce8 !important; /* Amarillo suave */
+    border-left: 4px solid #eab308;
+}
+
+.row-prioridad-3 {
+    background-color: #f0f9ff !important; /* Azul cielo suave */
+    border-left: 4px solid #0284c7;
+}
+
+.row-prioridad-4 {
+    background-color: #f0fdf4 !important; /* Verde menta suave */
+    border-left: 4px solid #10b981;
+}
+
+/* Badges de Estados de Consulta / Cita */
+.badge-estado-prioridad {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    border-radius: 9999px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.badge-por-cobrar {
+    background-color: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+
+.badge-en-espera {
+    background-color: #fef9c3;
+    color: #854d0e;
+    border: 1px solid #fde047;
+}
+
+.badge-en-consulta {
+    background-color: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #7dd3fc;
+}
+
+.badge-cita-hoy {
+    background-color: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+}
+
+.badge-facturado {
+    background-color: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #86efac;
+}
+
+.badge-general {
+    background-color: #f1f5f9;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+
+/* Badges de Tipo de Entidad */
+.badge-tipo-entidad {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    border-radius: 9999px;
+    white-space: nowrap;
+}
+
+.badge-tipo-paciente {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+
+.badge-tipo-aseguradora {
+    background-color: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+}
+
+.badge-tipo-cliente {
+    background-color: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid #ddd6fe;
+}
+
+.badge-tipo-suplidor {
+    background-color: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+}
+
+/* Badge Subgrupo ARS del Paciente */
+.badge-subgrupo-ars {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    font-size: 0.70rem;
+    font-weight: 600;
+    color: #047857;
+    background-color: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 4px;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+/* Botón Elegir */
+.btn-select-cliente {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 14px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    border-radius: 20px;
+    background: #0284c7;
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.2);
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-select-cliente:hover {
+    background: #0369a1;
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(2, 132, 199, 0.3);
+}
+
+.btn-select-cliente:active {
+    transform: translateY(0);
+}
+
+/* Modal Pagination & Footer Controls */
+.modal-pagination-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 6px 0;
+    margin-top: 12px;
+    border-top: 1px solid #edf2f7;
+    font-size: 0.84rem;
+    color: #64748b;
+}
+
+.modal-page-btn {
+    padding: 5px 12px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.modal-page-btn:hover:not(:disabled) {
+    background: #f1f5f9;
+    color: #0f172a;
+    border-color: #94a3b8;
+}
+
+.modal-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Toast Container */
+.pos-toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1090;
+}
+
+.spin-animation {
+    animation: spinRotate 0.8s linear infinite;
+}
+
+@keyframes spinRotate {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ========================================== */
+/* MODAL: CATÁLOGO DE ARTÍCULOS & SERVICIOS   */
+/* ========================================== */
+.modal-dialog.modal-articulos-custom {
+    max-width: 1100px !important;
+    width: 95%;
+}
+
+.modal-filter-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-filter-toolbar .modal-search-bar {
+    min-width: 250px;
+}
+
+.filter-select-modal {
+    padding: 9.5px 14px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 12px;
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: #334155;
+    background-color: #ffffff;
+    outline: none;
+    transition: all 0.2s ease;
+    min-width: 145px;
+    cursor: pointer;
+}
+
+.filter-select-modal:focus {
+    border-color: #059669;
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
+}
+
+.modal-search-bar.modal-search-articulo input:focus {
+    border-color: #059669;
+    box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.12);
+}
+
+.btn-refresh-catalogo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 18px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #059669;
+    background-color: #ffffff;
+    border: 1.5px solid #a7f3d0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-refresh-catalogo:hover {
+    background-color: #ecfdf5;
+    border-color: #059669;
+    color: #047857;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(5, 150, 105, 0.15);
+}
+
+.btn-refresh-catalogo:active {
+    transform: translateY(0);
+}
+
+/* Tabla de Catálogo de Artículos */
+.table-modal-articulos {
+    width: 100%;
+    margin-bottom: 0;
+    font-size: 0.88rem;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.table-modal-articulos thead th {
+    background-color: #f8fafc;
+    color: #475569;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 12px 14px;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+}
+
+.table-modal-articulos tbody td {
+    padding: 11px 14px;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.table-modal-articulos tbody tr {
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.table-modal-articulos tbody tr:hover {
+    background-color: #f0fdf4 !important;
+}
+
+/* Badges del Catálogo */
+.badge-itbis-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+
+.itbis-gravado {
+    background-color: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde047;
+}
+
+.itbis-exento {
+    background-color: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+.badge-almacen-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: #f8fafc;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+}
+
+.badge-editable-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    border-radius: 6px;
+}
+
+.editable-si {
+    background-color: #fffbeb;
+    color: #d97706;
+    border: 1px solid #fde68a;
+}
+
+.editable-no {
+    background-color: #f8fafc;
+    color: #94a3b8;
+    border: 1px solid #e2e8f0;
+}
+
+/* Botón Agregar Artículo */
+.btn-add-articulo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 14px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    border-radius: 20px;
+    background: #059669;
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(5, 150, 105, 0.2);
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-add-articulo:hover {
+    background: #047857;
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(5, 150, 105, 0.3);
+}
+
+.btn-add-articulo:active {
+    transform: translateY(0);
+}
+

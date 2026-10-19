@@ -1,0 +1,443 @@
+/* ==========================================================================
+   NUM_APROBACION_ARS.CSS - Módulo y Modal de Autorizaciones ARS (Seguros)
+   Tema: Verde Esmeralda / Médico Institucional (Compatible con cobro.css)
+   ========================================================================== */
+
+/* Animación de apertura suave */
+@keyframes arsFadeInScale {
+    0% {
+        opacity: 0;
+        transform: scale(0.93) translateY(-15px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes arsBackdropFade {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+/* Modal Overlay de Alta Jerarquía: se superpone a Sidebar y Header (z-index > 1050) */
+.modal-ars-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 2100; /* Superpuesto a Header (1050) y Sidebar */
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: arsBackdropFade 0.25s ease-out;
+    overflow-y: auto;
+}
+
+.modal-ars-overlay.active {
+    display: flex;
+}
+
+/* Contenedor del Modal */
+.modal-ars-dialog {
+    width: 100%;
+    max-width: 880px;
+    background: #ffffff;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 25px 50px -12px rgba(5, 150, 105, 0.25), 0 12px 30px rgba(15, 23, 42, 0.15);
+    overflow: hidden;
+    animation: arsFadeInScale 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    margin: auto;
+    position: relative;
+}
+
+
+/* Header del Modal ARS */
+.modal-ars-header {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    padding: 20px 26px;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+}
+
+.modal-ars-header::after {
+    content: '';
+    position: absolute;
+    top: -30px;
+    right: -30px;
+    width: 120px;
+    height: 120px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.modal-ars-title-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: relative;
+    z-index: 2;
+}
+
+.modal-ars-header-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(6px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.45rem;
+    color: #ffffff;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.modal-ars-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: #ffffff;
+}
+
+.modal-ars-subtitle {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 2px 0 0;
+    font-weight: 500;
+}
+
+.btn-close-ars {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    z-index: 2;
+}
+
+.btn-close-ars:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
+/* Cuerpo del Modal */
+.modal-ars-body {
+    padding: 24px 26px;
+    max-height: calc(85vh - 140px);
+    overflow-y: auto;
+}
+
+/* Tarjeta Informativa de Paciente y Aseguradora (Solo Lectura) */
+.ars-patient-card {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.ars-info-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.ars-info-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #166534;
+    margin-bottom: 2px;
+}
+
+.ars-info-value {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.ars-info-value .badge-ars {
+    background: #dcfce7;
+    color: #15803d;
+    border: 1px solid #86efac;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* Secciones de Formulario */
+.ars-form-section-title {
+    font-size: 0.84rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #047857;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Inputs y Controles */
+.ars-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.ars-label .req {
+    color: #dc2626;
+}
+
+.ars-input {
+    width: 100%;
+    height: 42px;
+    font-size: 0.92rem;
+    font-weight: 500;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 6px 12px;
+    color: #374151;            /* Antes #0f172a, ahora más suave */
+    transition: all 0.2s ease;
+    background-color: #ffffff;
+}
+
+.ars-input:focus {
+    border-color: #059669;
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+    outline: none;
+}
+
+.ars-input-readonly,
+.ars-input[readonly] {
+    background-color: #f1f5f9 !important;
+    color: #475569 !important;
+    border-color: #cbd5e1 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+}
+
+.ars-textarea {
+    width: 100%;
+    font-size: 0.88rem;
+    font-weight: 400;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 12px;
+    color: #374151;            /* Antes #0f172a */
+    transition: all 0.2s ease;
+    resize: vertical;
+    min-height: 60px;
+}
+
+.ars-textarea:focus {
+    border-color: #059669;
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+    outline: none;
+}
+
+/* Banner de Cobertura y Responsabilidad del Paciente */
+.ars-cobertura-banner {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    border: 1.5px solid #86efac;
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin: 18px 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    align-items: center;
+}
+
+@media (max-width: 640px) {
+    .ars-cobertura-banner {
+        grid-template-columns: 1fr;
+    }
+}
+
+.ars-calc-col {
+    text-align: center;
+}
+
+.ars-calc-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #166534;
+    margin-bottom: 4px;
+}
+
+.ars-calc-value {
+    font-size: 1.25rem;
+    font-weight: 900;
+    font-family: monospace;
+    color: #15803d;
+}
+
+.ars-calc-value.paciente {
+    color: #0369a1;
+}
+
+.ars-calc-value.total {
+    color: #334155;
+}
+
+/* Footer y Botones de Acción */
+.modal-ars-footer {
+    padding: 16px 26px;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.btn-ars-apply {
+    padding: 11px 24px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 800;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+    transition: all 0.2s ease;
+}
+
+.btn-ars-apply:hover {
+    background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+    box-shadow: 0 6px 16px rgba(5, 150, 105, 0.35);
+    transform: translateY(-1px);
+}
+
+.btn-ars-clear {
+    padding: 11px 18px;
+    border-radius: 11px;
+    background: #ffffff;
+    color: #dc2626;
+    border: 1.5px solid #fca5a5;
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-ars-clear:hover {
+    background: #fef2f2;
+    border-color: #ef4444;
+}
+
+.btn-ars-cancel {
+    padding: 11px 18px;
+    border-radius: 11px;
+    background: #e2e8f0;
+    color: #334155;
+    border: none;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-ars-cancel:hover {
+    background: #cbd5e1;
+}
+
+/* Indicador visual en factura_venta.php cuando hay una aprobación activa */
+.input-num-aprobacion-trigger {
+    cursor: pointer !important;
+    background-color: #f0fdf4 !important;
+    border-color: #86efac !important;
+    color: #15803d !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease;
+}
+
+.input-num-aprobacion-trigger:hover {
+    background-color: #dcfce7 !important;
+    border-color: #059669 !important;
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+}
+
+/* Campo ARS bloqueado para pacientes privados */
+.input-ars-disabled {
+    background-color: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed !important;
+    font-style: italic;
+}
+
+.badge-ars-activo {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 6px;
+}
+ 
+.btn-outline-light{
+    background-color: #f0fdf4 !important;
+    border-color: #86efac !important;
+    color: #15803d !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease;
+}
+
+ 

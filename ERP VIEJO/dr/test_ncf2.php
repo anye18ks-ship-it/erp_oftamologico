@@ -1,0 +1,1 @@
+<?php define("APP_RUNNING", true); require_once "config/Database.php"; $db = new Database(); $pdo = $db->getConnection(); $s = $pdo->query("SELECT * FROM carga_ncf"); print_r($s->fetchAll(PDO::FETCH_ASSOC)); echo "\n\nSERIES_NCF:\n"; $s2 = $pdo->query("SELECT * FROM serie_ncf"); print_r($s2->fetchAll(PDO::FETCH_ASSOC)); ?>

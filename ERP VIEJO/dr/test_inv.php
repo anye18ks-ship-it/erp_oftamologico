@@ -1,0 +1,1 @@
+<?php define("APP_RUNNING", true); require_once "config/Database.php"; $db = new Database(); $pdo = $db->getConnection(); $s = $pdo->query("SELECT TOP 5 C_DocEntry, U_FacSerie, U_FACNUM, DocStatus FROM POSOINV ORDER BY C_DocEntry DESC"); print_r($s->fetchAll(PDO::FETCH_ASSOC)); ?>

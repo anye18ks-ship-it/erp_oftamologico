@@ -1,0 +1,29 @@
+# ==============================================================================
+# CONFIGURACIÓN DE URLS LIMPIAS Y REESCRITURA (APACHE / MOD_REWRITE)
+# ==============================================================================
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Evitar reescribir archivos estáticos reales o directorios existentes
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Redirigir todas las demás peticiones limpias a index.php manteniendo parámetros
+    RewriteRule ^(.*)$ index.php?page=$1 [QSA,L]
+</IfModule>
+
+# Seguridad: Prevenir listado de directorios
+Options -Indexes
+
+# Protección para archivos sensibles
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+

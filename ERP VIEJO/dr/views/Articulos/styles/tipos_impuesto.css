@@ -1,0 +1,406 @@
+/* ==========================================================================
+   TIPOS_IMPUESTO.CSS - Módulo de Tipos de Impuestos (posOSTC)
+   Estilo corporativo unificado ERP Oftalmología
+   ========================================================================== */
+
+.impuestos-container {
+    padding: 6px 0 24px;
+}
+
+/* Header de la Pantalla */
+.page-header-module {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.page-header-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.page-header-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+    color: #0284c7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    box-shadow: 0 4px 10px rgba(2, 132, 199, 0.12);
+}
+
+.page-title {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.page-subtitle {
+    font-size: 0.82rem;
+    color: #64748b;
+    margin: 2px 0 0;
+    font-weight: 500;
+}
+
+/* Botones de Acción */
+.btn-primary-action {
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.22);
+    text-decoration: none;
+}
+
+.btn-primary-action:hover {
+    background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
+    color: #ffffff;
+}
+
+.btn-secondary-action {
+    background: #ffffff;
+    color: #475569;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+
+.btn-secondary-action:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+}
+
+.btn-outline-secondary {
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.88rem;
+    padding: 9px 16px;
+}
+
+.btn-outline-secondary:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+/* Layout Dividido (Split Layout) */
+.split-layout-grid {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 22px;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .split-layout-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Form Card */
+.form-card-box {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+}
+
+.form-card-header {
+    background: linear-gradient(135deg, #0a2540 0%, #103b66 100%);
+    color: #ffffff;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.form-card-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.form-card-body {
+    padding: 22px 20px;
+}
+
+/* Grupos de Campos e Inputs */
+.field-group {
+    margin-bottom: 16px;
+}
+
+.field-label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.field-label .required {
+    color: #ef4444;
+}
+
+.field-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.field-icon {
+    position: absolute;
+    left: 14px;
+    color: #94a3b8;
+    font-size: 1rem;
+    pointer-events: none;
+    z-index: 5;
+    transition: color 0.2s;
+}
+
+.field-input,
+.field-input-wrap input,
+.field-input-wrap select,
+.field-input-wrap .form-control {
+    width: 100% !important;
+    height: 42px !important;
+    padding: 0 14px 0 40px !important;
+    border-radius: 10px !important;
+    border: 1.5px solid #cbd5e1 !important;
+    font-size: 0.88rem !important;
+    color: #0f172a !important;
+    background: #f8fafc !important;
+    outline: none !important;
+    transition: all 0.2s ease !important;
+    box-sizing: border-box !important;
+}
+
+.field-input:focus,
+.field-input-wrap input:focus,
+.field-input-wrap select:focus,
+.field-input-wrap .form-control:focus {
+    background: #ffffff !important;
+    border-color: #0284c7 !important;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12) !important;
+}
+
+.field-input:focus + .field-icon,
+.field-input-wrap:focus-within .field-icon {
+    color: #0284c7;
+}
+
+.field-input:read-only,
+.field-input-wrap input:read-only {
+    background-color: #f1f5f9 !important;
+    color: #64748b !important;
+    cursor: not-allowed !important;
+}
+
+.field-hint {
+    font-size: 0.74rem;
+    color: #64748b;
+    margin-top: 5px;
+}
+
+/* Tabla Moderna */
+.modern-table-card {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+}
+
+.modern-table-header {
+    padding: 16px 20px;
+    background: #ffffff;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.modern-table-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Filtro en Vivo */
+.table-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.search-input-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.search-input-wrap i {
+    position: absolute;
+    left: 12px;
+    color: #94a3b8;
+    font-size: 0.9rem;
+    pointer-events: none;
+}
+
+.search-input-wrap input {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px 0 36px;
+    border-radius: 8px;
+    border: 1.5px solid #cbd5e1;
+    font-size: 0.84rem;
+    background: #ffffff;
+    color: #0f172a;
+    outline: none;
+    transition: all 0.15s ease;
+}
+
+.search-input-wrap input:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.1);
+}
+
+/* Estilos de Tabla */
+.custom-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.custom-table th {
+    background: #f8fafc;
+    padding: 12px 18px;
+    font-weight: 700;
+    color: #475569;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    border-bottom: 1.5px solid #e2e8f0;
+    text-align: left;
+}
+
+.custom-table td {
+    padding: 14px 18px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+    vertical-align: middle;
+}
+
+.custom-table tr:hover td {
+    background: #f8fafc;
+}
+
+/* Badges y Pills */
+.badge-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.badge-code {
+    background: #f1f5f9;
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
+    font-family: monospace;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.badge-rate {
+    background: #e0f2fe;
+    color: #0284c7;
+    border: 1px solid #bae6fd;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Botones de Acción en Tabla */
+.btn-table-action {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid #cbd5e1;
+    background: #ffffff;
+    color: #0284c7;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 0.9rem;
+    text-decoration: none;
+}
+
+.btn-table-action:hover {
+    background: #0284c7;
+    border-color: #0284c7;
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+}

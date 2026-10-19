@@ -1,0 +1,31 @@
+==================================================
+SERVIDOR ADMS ZKTECO ACTIVO EN PUERTO: 81
+==================================================
+
+[CONEXIÓN CDATA] GET /iclock/cdata?SN=TTQ5255100598&options=all&language=101&pushver=2.4.1&DeviceType=att&PushOptionsFlag=1
+
+[CONEXIÓN CDATA] POST /iclock/cdata?SN=TTQ5255100598&table=OPERLOG&Stamp=9999
+--- DATOS RECIBIDOS ---
+OPLOG 82	99	2026-07-31 20:48:30	add adms address	0	0	0
+
+[CONEXIÓN CDATA] POST /iclock/cdata?SN=TTQ5255100598&table=options
+--- DATOS RECIBIDOS ---
+~DeviceName=MB460 Plus,MAC=00:17:61:13:15:44,TransactionCount=51,~MaxAttLogCount=10,UserCount=5,~MaxUserCount=20,PhotoFunOn=1,~MaxUserPhotoCount=2000,FingerFunOn=1,FPVersion=10,~MaxFingerCount=20,FPCount=3,FaceFunOn=1,FaceVersion=7,~MaxFaceCount=1500,FaceCount=1,FvFunOn=0,FvVersion=3,~MaxFvCount=10,FvCount=0,PvFunOn=0,PvVersion=12,~MaxPvCount=,PvCount=0,Language=101,IPAddress=172.16.2.207,~Platform=ZMM501_TFT,~OEMVendor=ZKTECO CO., LTD.,FWVersion=ZMM501-NF28VF-Ver2.2.1,PushVersion=Ver 3.1.2S-20250328,RegDeviceType=,VisilightFun=0,MultiBioDataSupport=0:1:1:0:0:0:0:0:0:0,MultiBioPhotoSupport=0:0:0:0:0:0:0:0:0:0,IRTempDetectionFunOn=,MaskDetectionFunOn=,UserPicURLFunOn=1,VisualIntercomFunOn=,VideoTID=,QRCodeDecryptFunList=,VideoProtocol=,IsSupportQRcode=,QRCodeEnable=,SubcontractingUpgradeFunOn=1,wgRuleVer=,LivePvFunOn=,SipDeviceType=,SipEnableUnit=
+
+[CONEXIÓN CDATA] POST /iclock/cdata?SN=TTQ5255100598&table=OPERLOG&Stamp=9999
+--- DATOS RECIBIDOS ---
+OPLOG 83	99	2026-07-31 20:48:33	WebServerPort	0	0	0
+
+[CONEXIÓN CDATA] POST /iclock/cdata?SN=TTQ5255100598&table=ATTLOG&Stamp=9999
+--- DATOS RECIBIDOS ---
+1057049	2026-07-31 20:48:53	255	1	0	0	0	0	0	0
+   [OK BD ATTLOG] 1057049 | 2026-07-31 20:48:53
+
+[CONEXIÓN CDATA] POST /iclock/cdata?SN=TTQ5255100598&table=ATTLOG&Stamp=9999
+--- DATOS RECIBIDOS ---
+1056043	2026-07-31 20:49:05	255	1	0	0	0	0	0	0
+   [OK BD ATTLOG] 1056043 | 2026-07-31 20:49:05
+
+[CONEXIÓN CDATA] POST /iclock/cdata?SN=TTQ5255100598&table=OPERLOG&Stamp=9999
+--- DATOS RECIBIDOS ---
+OPLOG 4	99	2026-07-31 20:49:22	99	0	0	0

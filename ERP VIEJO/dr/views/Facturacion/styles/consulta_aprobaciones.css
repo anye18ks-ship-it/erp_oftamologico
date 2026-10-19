@@ -1,0 +1,1418 @@
+/* ==========================================================================
+   CONSULTA_APROBACIONES.CSS - Consulta de Aprobaciones ARS & Facturación Especial
+   ERP Oftalmológico - Dra. Nellie Grace Olivo Marte
+   ========================================================================== */
+
+.consulta-container {
+    padding: 10px 0 35px;
+}
+
+/* --------------------------------------------------------------------------
+   1. HEADER DE PÁGINA
+   -------------------------------------------------------------------------- */
+.page-header-module {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.page-header-title {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.page-header-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    color: #16a34a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);
+}
+
+.page-title {
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
+.page-subtitle {
+    font-size: 0.84rem;
+    color: #64748b;
+    margin: 2px 0 0;
+    font-weight: 500;
+}
+
+/* Header Buttons */
+.btn-header-action {
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.btn-header-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.2);
+}
+
+.btn-header-success:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
+}
+
+.btn-header-home {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+.btn-header-home:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+    transform: translateY(-1px);
+}
+
+
+
+/* --------------------------------------------------------------------------
+   3. TABS DE NAVEGACIÓN MODULAR
+   -------------------------------------------------------------------------- */
+.module-tabs-ars {
+    display: flex;
+    background: #f1f5f9;
+    padding: 6px;
+    border-radius: 14px;
+    gap: 6px;
+    border: 1px solid #e2e8f0;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+}
+
+.module-tab-ars-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 20px;
+    border-radius: 10px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #64748b;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.module-tab-ars-btn:hover {
+    color: #0f172a;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.module-tab-ars-btn.active {
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Colores específicos activos por pestaña según solicitud */
+.module-tab-ars-btn#btn-tab-pendientes.active {
+    color: #0284c7;
+    border-bottom: 2.5px solid #0284c7;
+}
+
+.module-tab-ars-btn#btn-tab-facturadas.active {
+    color: #d97706;
+    border-bottom: 2.5px solid #f59e0b;
+}
+
+.module-tab-ars-btn#btn-tab-cobro.active {
+    color: #15803d;
+    border-bottom: 2.5px solid #10b981;
+}
+
+.module-tab-ars-btn#btn-tab-reportes.active {
+    color: #dc2626;
+    border-bottom: 2.5px solid #ef4444;
+}
+
+.tab-badge-ars {
+    font-size: 0.74rem;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+
+.tab-badge-pending {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+.tab-badge-billed {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.tab-badge-cobro {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.tab-pane-ars {
+    display: none;
+    animation: fadeInTab 0.25s ease;
+}
+
+.tab-pane-ars.active {
+    display: block;
+}
+
+@keyframes fadeInTab {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* --------------------------------------------------------------------------
+   4. BARRA DE ACCIÓN DE FACTURACIÓN DE LOTE (BATCH ACTION BAR)
+   -------------------------------------------------------------------------- */
+.batch-action-bar {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    border: 1.5px solid #86efac;
+    border-radius: 14px;
+    padding: 12px 18px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    box-shadow: 0 4px 12px rgba(22, 163, 74, 0.08);
+}
+
+.batch-action-bar-facturadas {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 1.5px solid #fde68a;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
+}
+
+.batch-stats-wrap {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.batch-stat-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.86rem;
+    color: #166534;
+}
+
+.batch-stat-val {
+    font-weight: 800;
+    font-family: monospace;
+    font-size: 1rem;
+    color: #14532d;
+}
+
+.btn-batch-facturar {
+    background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 18px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
+}
+
+.btn-batch-facturar:hover:not(:disabled) {
+    background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+    transform: translateY(-1px);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+}
+
+.btn-batch-facturar:disabled {
+    background: #cbd5e1;
+    color: #94a3b8;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   5. CARD PRINCIPAL Y BARRA DE FILTROS AVANZADOS
+   -------------------------------------------------------------------------- */
+.consulta-card {
+    background: #ffffff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 18px;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.03);
+    overflow: hidden;
+}
+
+.consulta-filter-bar {
+    background: #f8fafc;
+    border-bottom: 1.5px solid #e2e8f0;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.filter-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.filter-date-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 4px 10px;
+    transition: all 0.2s ease;
+}
+
+.filter-date-group:focus-within {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+}
+
+.filter-date-label {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #64748b;
+    white-space: nowrap;
+    margin: 0;
+}
+
+.filter-date-input {
+    border: none;
+    outline: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #0f172a;
+    padding: 2px 4px;
+    background: transparent;
+}
+
+.btn-filter-apply {
+    background: #0284c7;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.btn-filter-apply:hover {
+    background: #0369a1;
+    color: #ffffff;
+}
+
+.btn-filter-clear {
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: #ffffff;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-filter-clear:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+    border-color: #94a3b8;
+}
+
+.consulta-card-body {
+    padding: 20px;
+}
+
+/* --------------------------------------------------------------------------
+   6. ESTILIZACIÓN DE TABLAS (PENDIENTES, FACTURADAS & COBRO ARS)
+   -------------------------------------------------------------------------- */
+#tablaPendientes,
+#tablaFacturadas,
+#tablaCobroARS {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100% !important;
+}
+
+#tablaPendientes thead th,
+#tablaFacturadas thead th,
+#tablaCobroARS thead th {
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #475569;
+    padding: 11px 12px;
+    border-bottom: 2px solid #cbd5e1;
+    background: #f8fafc;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+#tablaPendientes tbody td,
+#tablaFacturadas tbody td,
+#tablaCobroARS tbody td {
+    font-size: 0.83rem;
+    padding: 10px 12px;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+    transition: background 0.15s ease;
+}
+
+#tablaPendientes tbody tr:hover,
+#tablaFacturadas tbody tr:hover,
+#tablaCobroARS tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Subtotales y Checkbox */
+.check-aprobacion {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #16a34a;
+    border-radius: 4px;
+}
+
+.table-subtotal-row {
+    background-color: #f8fafc;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* Badges y Elementos de Estado */
+.badge-aprobacion {
+    background: #ecfdf5;
+    color: #065f46;
+    font-weight: 700;
+    font-size: 0.82rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid #a7f3d0;
+    display: inline-flex;
+    align-items: center;
+}
+
+.badge-ars-pill {
+    background: #f0fdf4;
+    color: #166534;
+    font-weight: 600;
+    font-size: 0.78rem;
+    padding: 3px 8px;
+    border-radius: 12px;
+    border: 1px solid #bbf7d0;
+    display: inline-block;
+    max-width: 170px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.badge-factura {
+    background: #f8fafc;
+    color: #334155;
+    font-weight: 600;
+    font-size: 0.78rem;
+    padding: 3px 7px;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    display: inline-block;
+}
+
+.badge-status {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: inline-block;
+    text-transform: uppercase;
+}
+
+.badge-status-facturado {
+    background: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.badge-status-pendiente {
+    background: #fef3c7;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+
+.badge-status-anulado {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+
+.badge-status-nc {
+    background: #f3e8ff;
+    color: #7e22ce;
+    border: 1px solid #e9d5ff;
+}
+
+/* --------------------------------------------------------------------------
+   Botones de Acción en Tablas (Iconos Unificados, Elegantes y Limpios)
+   -------------------------------------------------------------------------- */
+.btn-action-view {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.btn-action-view:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #0f172a;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+}
+
+.btn-action-edit {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #0284c7;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.btn-action-edit:hover {
+    background: #e0f2fe;
+    border-color: #7dd3fc;
+    color: #0369a1;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(2, 132, 199, 0.15);
+}
+
+
+.btn-action-factura-ars {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #0284c7;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.btn-action-factura-ars:hover {
+    background: #e0f2fe;
+    border-color: #7dd3fc;
+    color: #0369a1;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(2, 132, 199, 0.15);
+}
+
+.btn-action-relacion {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #d97706;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.btn-action-relacion:hover {
+    background: #fef3c7;
+    border-color: #fde68a;
+    color: #b45309;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(217, 119, 6, 0.15);
+}
+
+.btn-action-trazabilidad {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #6366f1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.btn-action-trazabilidad:hover {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+    color: #4338ca;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(99, 102, 241, 0.15);
+}
+
+.btn-action-nc {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #fecaca;
+    background: #fee2e2;
+    color: #dc2626;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(220, 38, 38, 0.08);
+}
+
+.btn-action-nc:hover {
+    background: #dc2626;
+    border-color: #b91c1c;
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(220, 38, 38, 0.25);
+}
+
+/* --------------------------------------------------------------------------
+   7. DISEÑO DE ESTADO VACÍO (EMPTY STATE)
+   -------------------------------------------------------------------------- */
+.empty-data-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 45px 20px;
+    text-align: center;
+}
+
+.empty-state-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.85rem;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.empty-state-icon.empty-pending {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    color: #b45309;
+    border: 1px solid #fcd34d;
+}
+
+.empty-state-icon.empty-billed {
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    color: #15803d;
+    border: 1px solid #86efac;
+}
+
+.empty-state-icon.empty-neutral {
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+}
+
+.empty-state-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+
+.empty-state-text {
+    font-size: 0.84rem;
+    color: #64748b;
+    max-width: 440px;
+    margin: 0 auto;
+    line-height: 1.4;
+}
+
+/* DataTables empty cell layout */
+.dataTables_empty {
+    padding: 35px 15px !important;
+    text-align: center !important;
+    background: #fdfdfe !important;
+}
+
+/* --------------------------------------------------------------------------
+   8. PANEL GENERADOR DE REPORTE GENERAL PDF
+   -------------------------------------------------------------------------- */
+.report-generator-card {
+    background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+    border: 1.5px solid #cbd5e1;
+    border-radius: 18px;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+    overflow: hidden;
+}
+
+.report-generator-header {
+    background: #f1f5f9;
+    border-bottom: 1.5px solid #e2e8f0;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.generator-icon-badge {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: #fee2e2;
+    color: #dc2626;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+}
+
+.generator-title {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+}
+
+.generator-subtitle {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin: 1px 0 0;
+}
+
+.quick-period-pills {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-pill-period {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: #ffffff;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s ease;
+}
+
+.btn-pill-period:hover {
+    background: #0284c7;
+    color: #ffffff;
+    border-color: #0284c7;
+}
+
+.report-generator-body {
+    padding: 20px 22px;
+}
+
+.form-report-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.form-report-select {
+    font-size: 0.84rem;
+    border-radius: 10px;
+    border: 1.5px solid #cbd5e1;
+    padding: 7px 12px;
+    font-weight: 600;
+    color: #0f172a;
+    transition: all 0.2s ease;
+}
+
+.form-report-select:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.btn-generate-report-pdf {
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 18px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 3px 10px rgba(2, 132, 199, 0.25);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    height: 38px;
+}
+
+.btn-generate-report-pdf:hover {
+    background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(2, 132, 199, 0.35);
+    color: #ffffff;
+}
+
+/* --------------------------------------------------------------------------
+   9. MODAL DETALLE DE AUTORIZACIÓN CLÍNICA (ESTILO NOTA DE CRÉDITO / FACTURA)
+   -------------------------------------------------------------------------- */
+.modal-detail-content {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 15px 35px rgba(15, 23, 42, 0.2);
+    overflow: hidden;
+}
+
+.modal-detail-header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #ffffff;
+    padding: 16px 22px;
+    border-bottom: none;
+}
+
+.modal-header-icon-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #38bdf8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+}
+
+.modal-subtitle {
+    font-size: 0.78rem;
+    color: #94a3b8;
+}
+
+.detail-banner {
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px 18px;
+}
+
+.modal-nc-card-info {
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    height: 100%;
+}
+
+.info-label-muted {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.info-value-bold {
+    font-size: 0.98rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.detail-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.detail-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.81rem;
+    padding: 4px 0;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.detail-info-row:last-child {
+    border-bottom: none;
+}
+
+.detail-info-label {
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.76rem;
+}
+
+.detail-info-val {
+    font-weight: 700;
+    color: #0f172a;
+    text-align: right;
+}
+
+.fin-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 8px;
+    transition: all 0.2s ease;
+}
+
+.fin-box:hover {
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+}
+
+.fin-label {
+    font-size: 0.70rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748b;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.fin-value {
+    font-size: 1.12rem;
+    font-weight: 800;
+    margin: 0;
+}
+
+.modal-detail-footer {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    padding: 12px 22px;
+}
+
+/* --------------------------------------------------------------------------
+   10. DATATABLES PERSONALIZACIÓN & PAGINACIÓN
+   -------------------------------------------------------------------------- */
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter {
+    margin-bottom: 14px;
+    font-size: 0.86rem;
+    color: #475569;
+}
+
+.dataTables_wrapper .dataTables_length select,
+.dataTables_wrapper .dataTables_filter input {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 0.86rem;
+    color: #0f172a;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.dataTables_wrapper .dataTables_length select:focus,
+.dataTables_wrapper .dataTables_filter input:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+}
+
+.dataTables_wrapper .dataTables_info {
+    padding-top: 14px;
+    font-size: 0.84rem;
+    color: #64748b;
+}
+
+.dataTables_wrapper .dataTables_paginate {
+    padding-top: 12px;
+}
+
+.dataTables_wrapper .dataTables_paginate .pagination {
+    gap: 4px;
+    margin: 0;
+}
+
+.dataTables_wrapper .dataTables_paginate .page-item .page-link {
+    border-radius: 8px !important;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    font-weight: 600;
+    font-size: 0.84rem;
+    padding: 6px 12px;
+    transition: all 0.15s ease;
+}
+
+.dataTables_wrapper .dataTables_paginate .page-item:hover .page-link {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+
+.dataTables_wrapper .dataTables_paginate .page-item.active .page-link {
+    background: #0284c7;
+    border-color: #0284c7;
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+}
+
+.dataTables_wrapper .dataTables_paginate .page-item.disabled .page-link {
+    background: #f8fafc;
+    color: #94a3b8;
+    border-color: #edf2f7;
+}
+
+/* Espaciar y formatear el selector de cantidad de registros */
+div.dataTables_length select {
+    width: 80px !important;
+    min-width: 80px !important;
+    margin: 0 10px !important;
+    padding-left: 12px !important;
+    padding-right: 35px !important;
+    display: inline-block !important;
+}
+
+div.dataTables_length {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 5px;
+}
+
+/* --------------------------------------------------------------------------
+   14. COMPONENTES DEL MODAL DE FACTURACIÓN ARS
+   -------------------------------------------------------------------------- */
+.modal-services-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.modal-services-table thead th {
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 9px 14px;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+}
+
+.modal-services-table tbody td {
+    padding: 9px 14px;
+    font-size: 0.85rem;
+    color: #1e293b;
+    border-bottom: 1px solid #f1f5f9;
+    background: #ffffff;
+}
+
+.modal-services-table tbody tr:nth-of-type(even) td {
+    background: #f8fafc;
+}
+
+.modal-services-table tbody tr:hover td {
+    background: #f0fdf4;
+}
+
+/* Input bloqueado/fijo serie E31 con altura y dimensiones exactas a los inputs de fecha y select */
+.modal-locked-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 31px;
+    min-height: 31px;
+    padding: 0 10px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+.modal-locked-input .badge-locked-tag {
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    color: #ffffff;
+    font-family: var(--font-mono, monospace);
+    font-weight: 800;
+    font-size: 0.74rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    line-height: 1.4;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+.modal-locked-input .modal-locked-text {
+    font-size: 0.80rem;
+    font-weight: 600;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --------------------------------------------------------------------------
+   15. GESTIÓN DE COBRO ARS: BADGES DE ESTADO & ACCIONES EN LOTE
+   -------------------------------------------------------------------------- */
+.batch-action-bar-cobro {
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    border: 1.5px solid #a7f3d0;
+}
+
+.btn-batch-cobrada {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
+.btn-batch-cobrada:hover:not(:disabled) {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(16, 185, 129, 0.35);
+}
+
+.btn-batch-rechazada {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
+}
+
+.btn-batch-rechazada:hover:not(:disabled) {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(239, 68, 68, 0.35);
+}
+
+.btn-batch-nc {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.25);
+}
+
+.btn-batch-nc:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(139, 92, 246, 0.35);
+}
+
+.btn-batch-cobrada:disabled,
+.btn-batch-rechazada:disabled,
+.btn-batch-nc:disabled {
+    background: #e2e8f0 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* Badges de Estado de Cobro */
+.badge-cobro-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.badge-cobro-pendiente {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+
+.badge-cobro-cobrada {
+    background: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.badge-cobro-rechazada {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+}
+
+.badge-cobro-nc {
+    background: #f3e8ff;
+    color: #7e22ce;
+    border: 1px solid #e9d5ff;
+}
+
+.badge-cobro-cancelada {
+    background: #ef4444;
+    color: #ffffff;
+    border: 1px solid #dc2626;
+    font-weight: 800;
+    box-shadow: 0 1px 4px rgba(239, 68, 68, 0.2);
+}
+
+.badge-ncf-canceled {
+    text-decoration: line-through;
+    opacity: 0.75;
+    background: #fee2e2 !important;
+    color: #991b1b !important;
+}
+
+.table-row-canceled {
+    opacity: 0.7;
+    background-color: rgba(254, 242, 242, 0.6) !important;
+}
+
+.table-row-cobrada {
+    background-color: rgba(240, 253, 244, 0.4);
+}
+
+.table-row-rechazada {
+    background-color: rgba(254, 242, 242, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   16. TRAZABILIDAD & LÍNEA DE TIEMPO (TIMELINE)
+   -------------------------------------------------------------------------- */
+.timeline-ars-wrapper {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px 24px;
+}
+
+.timeline-ars {
+    position: relative;
+    border-left: 2px dashed #cbd5e1;
+    margin-left: 12px;
+    padding-left: 24px;
+}
+
+.timeline-item-ars {
+    position: relative;
+    margin-bottom: 22px;
+}
+
+.timeline-item-ars:last-child {
+    margin-bottom: 0;
+}
+
+.timeline-dot-ars {
+    position: absolute;
+    left: -33px;
+    top: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 3px solid #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.timeline-dot-green {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.timeline-dot-red {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.timeline-dot-purple {
+    border-color: #8b5cf6;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.timeline-header-ars {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.timeline-title-ars {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.timeline-date-ars {
+    font-size: 0.74rem;
+    color: #64748b;
+    font-family: monospace;
+    font-weight: 600;
+}
+
+.timeline-body-ars {
+    font-size: 0.82rem;
+    color: #475569;
+    line-height: 1.45;
+}
+
+.timeline-meta-ars {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 4px;
+}
+
+/* ==========================================================================
+   AGRUPACIÓN VISUAL DE LOTES EN TABLA FACTURADAS (HISTORIAL ARS)
+   ========================================================================== */
+
+/* Barra lateral conectora continua a la izquierda */
+#tablaFacturadas tbody tr.fila-en-lote > td:first-child {
+    position: relative;
+    border-left: 4.5px solid #0284c7 !important; /* Azul profesional conector */
+}
+
+#tablaFacturadas tbody tr.fila-en-lote.lote-inicio > td:first-child {
+    border-top-left-radius: 6px;
+}
+
+#tablaFacturadas tbody tr.fila-en-lote.lote-fin > td:first-child {
+    border-bottom-left-radius: 6px;
+}
+
+/* Fondo suave continuo para las filas que comparten el mismo lote */
+#tablaFacturadas tbody tr.fila-en-lote > td {
+    background-color: #f8fafc !important;
+}
+
+#tablaFacturadas tbody tr.fila-en-lote:hover > td {
+    background-color: #f1f5f9 !important;
+}
+
+/* División tenue / discontinua entre filas del MISMO lote */
+#tablaFacturadas tbody tr.fila-en-lote.lote-inicio > td,
+#tablaFacturadas tbody tr.fila-en-lote.lote-medio > td {
+    border-bottom: 1px dashed #e2e8f0 !important;
+}
+
+/* Separador horizontal sólido y limpio ENTRE lotes diferentes */
+#tablaFacturadas tbody tr.lote-separador-fin > td,
+#tablaFacturadas tbody tr.fila-en-lote.lote-fin > td {
+    border-bottom: 2.5px solid #cbd5e1 !important;
+}
+
+
+
