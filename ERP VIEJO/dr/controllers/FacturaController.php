@@ -10,6 +10,9 @@ class FacturaController {
         $database = new Database();
         $pdo = $database->getConnection();
 
+        // Limpiar cualquier sesión de cobro pendiente cancelada o abandonada
+        unset($_SESSION['datos_cobro_pendiente']);
+
         // ==========================================
         // VALIDACIÓN DE CAJA APERTURADA (REGRA DE NEGOCIO)
         // ==========================================
@@ -57,12 +60,14 @@ class FacturaController {
                     FROM POSOINV inv WITH (NOLOCK)
                     WHERE CAST(inv.DocDate AS DATE) = CAST(GETDATE() AS DATE)
                       AND ISNULL(inv.CANCELED, 'N') <> 'Y'
+                      AND (inv.DocStatus = 'C' OR inv.ExtraDays > 1 OR ISNULL(inv.PaidToDate, 0) > 0)
                     UNION
                     SELECT DISTINCT a.CardCode
                     FROM AprobacionARS a WITH (NOLOCK)
                     WHERE CAST(a.CreateDateD AS DATE) = CAST(GETDATE() AS DATE)
                       AND a.Status <> 'X'
                       AND a.CardCode IS NOT NULL
+                      AND (a.DocEntry_Factura IS NOT NULL OR a.NumFactura = 'COBERTURA 100%')
                 ),
                 ListaHoy AS (
                     SELECT 
@@ -232,11 +237,13 @@ class FacturaController {
             exit();
         }
 
-        unset($_SESSION['datos_cobro_pendiente']);
+        // NO destruir datos_cobro_pendiente aquí: se necesita al enviar guardarCobro
         include __DIR__ . '/../views/Facturacion/cobro.php';
     }
 
     // Guardar el cobro y el pago en caja (Soporta Efectivo, Múltiples Tarjetas y Transferencia Bancaria)
+    // Para ventas al contado, aquí se realiza la creación atómica de Factura (POSOINV), Detalle (POSINV1),
+    // Aprobaciones ARS (AprobacionARS), ecf_xml_invoice y diario_caja_det sin contaminar tablas ni secuencias si se cancela.
     public function guardarCobro() {
         $database = new Database();
         $pdo = $database->getConnection();
@@ -282,37 +289,11 @@ class FacturaController {
                 throw new Exception("Debe ingresar el número de referencia o comprobante para la transferencia bancaria.");
             }
 
-            // Consultar Factura y Aprobación ARS si existe
-            $sqlFac = "
-                SELECT 
-                    f.DocTotal, 
-                    f.U_SCIASerie, 
-                    f.U_SCIADocNum,
-                    a.MontoResponsable
-                FROM POSOINV f
-                LEFT JOIN AprobacionARS a ON f.C_DocEntry = a.DocEntry_Factura AND a.Status <> 'X'
-                WHERE f.C_DocEntry = ?
-            ";
-            $stmtFac = $pdo->prepare($sqlFac);
-            $stmtFac->execute([$docEntry]);
-            $fac = $stmtFac->fetch(PDO::FETCH_ASSOC);
-
-            if (!$fac) throw new Exception("Factura no encontrada");
-
-            $totalFactura = floatval($fac['DocTotal']);
-            // Si hay un copago de ARS, ese es el monto esperado a cobrar, sino el total de la factura
-            $totalCobrar = isset($fac['MontoResponsable']) ? floatval($fac['MontoResponsable']) : $totalFactura;
-
             $totalTarjetas = 0;
             foreach ($tarjetas as $tj) {
                 $totalTarjetas += $tj['monto'];
             }
             $totalPagado = $efectivo + $totalTarjetas + $montoTransferencia;
-
-            // Validación de monto total cubierto
-            if ($totalPagado < $totalCobrar - 0.001) {
-                throw new Exception("El monto total ingresado (RD$ " . number_format($totalPagado, 2) . ") es menor al total a pagar (RD$ " . number_format($totalCobrar, 2) . ").");
-            }
 
             // Consultar ID de caja abierta activa
             $caja_id = $_SESSION['caja_id'] ?? 0;
@@ -330,32 +311,373 @@ class FacturaController {
                 $id_diario_caja = 1;
             }
 
-            // Registrar movimientos en diario_caja_det
+            $pendingPayload = $_SESSION['datos_cobro_pendiente']['factura_payload'] ?? null;
+
+            // =========================================================================
+            // CASO 1: NUEVA FACTURA AL CONTADO / COPAGO (Emisión atómica en el cobro)
+            // =========================================================================
+            if (!$esPendiente && !empty($pendingPayload)) {
+                $hdr = $pendingPayload['header'];
+                $lineasProcesadas = $pendingPayload['lineasProcesadas'];
+                $articulos100 = $pendingPayload['articulos100'] ?? [];
+                $articulosCopagoARS = $pendingPayload['articulosCopagoARS'] ?? [];
+                $hayAprobacionesPorArticulo = !empty($pendingPayload['hayAprobacionesPorArticulo']);
+                $aprobacionARS = $pendingPayload['aprobacionARS'] ?? null;
+                $numAprobacion = $pendingPayload['numAprobacion'] ?? '';
+                $tieneCopagoARS = !empty($pendingPayload['tieneCopagoARS']);
+                $copagoObjetivo = floatval($pendingPayload['copagoObjetivo'] ?? 0);
+                $arsMontoAprobado = floatval($pendingPayload['arsMontoAprobado'] ?? 0);
+                $arsPorcentajeCober = floatval($pendingPayload['arsPorcentajeCober'] ?? 0);
+
+                $cardCode = $hdr['CardCode'];
+                $cardName = $hdr['CardName'];
+                $facNit = $hdr['U_FacNit'];
+                $facNom = $hdr['U_FacNom'];
+                $facSerie = $hdr['U_FacSerie'];
+                $extraDays = intval($hdr['ExtraDays']);
+                $docDate = $hdr['DocDate'];
+                $tNegocio = $hdr['U_TNegocio'];
+                $terminal = $hdr['U_terminal'];
+                $usuario = $hdr['U_user'];
+                $docTotalFiscal = floatval($hdr['DocTotalFiscal']);
+                $discPrcntFiscal = floatval($hdr['DiscPrcntFiscal']);
+                $discSumFiscal = floatval($hdr['DiscSumFiscal']);
+                $totalImpuestoFiscal = floatval($hdr['TotalImpuestoFiscal']);
+
+                $totalCobrar = $docTotalFiscal;
+
+                // Validación de monto total cubierto
+                if ($totalPagado < $totalCobrar - 0.001) {
+                    throw new Exception("El monto total ingresado (RD$ " . number_format($totalPagado, 2) . ") es menor al total a pagar (RD$ " . number_format($totalCobrar, 2) . ").");
+                }
+
+                // 1. SECUENCIA 'F'
+                $serieDoc = 'F';
+                $sqlSec = "MERGE secuencia WITH (SERIALIZABLE) AS T 
+                           USING (VALUES (?)) AS U (tipo) ON U.tipo = T.tipo 
+                           WHEN MATCHED THEN UPDATE SET T.secuencia = secuencia + 1 
+                           WHEN NOT MATCHED THEN INSERT (secuencia, tipo) VALUES (1, U.tipo) 
+                           OUTPUT inserted.secuencia;";
+                $stmtSec = $pdo->prepare($sqlSec);
+                $stmtSec->execute([$serieDoc]);
+                $secDoc = $stmtSec->fetchColumn();
+                if (!$secDoc) throw new Exception("No se generó la secuencia para " . $serieDoc);
+                $NumAtCard = substr($serieDoc . str_pad($secDoc, 7, '0', STR_PAD_LEFT), 0, 20);
+
+                // 2. NCF
+                $cNCF = '';
+                $vNCFVence = null;
+                if (!empty($facSerie)) {
+                    $sqlNCF = "UPDATE carga_ncf 
+                               SET contador = contador + 1 
+                               OUTPUT Inserted.serie, Inserted.contador, Inserted.vencimiento 
+                               WHERE UPPER(serie) = ? 
+                               AND contador < final 
+                               AND id_carga = (SELECT MIN(id_carga) FROM carga_ncf WHERE UPPER(serie) = ? AND contador < final)";
+                    $stmtNCF = $pdo->prepare($sqlNCF);
+                    $stmtNCF->execute([$facSerie, $facSerie]);
+                    $ncfRow = $stmtNCF->fetch(PDO::FETCH_ASSOC);
+
+                    if (!$ncfRow) {
+                        throw new Exception("No quedan NCF disponibles para la serie " . $facSerie);
+                    }
+
+                    $stmtLen = $pdo->prepare("SELECT longitud FROM serie_ncf WHERE UPPER(serie) = ?");
+                    $stmtLen->execute([$facSerie]);
+                    $lenPad = (int)$stmtLen->fetchColumn();
+                    if ($lenPad <= 0) $lenPad = (stripos($facSerie, 'B') === 0) ? 8 : 10;
+
+                    $serieMayus = strtoupper(trim($ncfRow['serie'] ?: $facSerie));
+                    $cNCF = substr($serieMayus . str_pad($ncfRow['contador'], $lenPad, '0', STR_PAD_LEFT), 0, 20);
+                    $vNCFVence = $ncfRow['vencimiento'];
+                    if (empty($vNCFVence) || $vNCFVence == '0000-00-00') $vNCFVence = null;
+                }
+
+                // 3. INSERTAR HEADER (POSOINV) - DocStatus = 'C' (Cobrada)
+                $whsCodeHeader = !empty($lineasProcesadas) ? substr(trim($lineasProcesadas[0]['WhsCode'] ?? ''), 0, 20) : '';
+                $sqlH = "INSERT INTO POSOINV (
+                            DocDate, CardCode, CardName, U_FacNit, U_FacNom, NumAtCard, 
+                            U_SCIASerie, U_SCIADocNum, U_FacSerie, U_NCFVence, U_FACNUM, 
+                            DocTotal, DiscPrcnt, DiscSum, VatSum, ExtraDays, Filler, 
+                            U_user, U_terminal, U_TNegocio, DocStatus, PaidToDate, ObjType
+                         ) VALUES (
+                            CAST(? AS DATE), ?, ?, ?, ?, ?, 
+                            ?, ?, ?, ?, ?, 
+                            ?, ?, ?, ?, ?, ?, 
+                            ?, ?, ?, 'C', ?, 13
+                         )";
+                $stmtH = $pdo->prepare($sqlH);
+                $stmtH->execute([
+                    $docDate, $cardCode, $cardName, $facNit, $facNom, $NumAtCard, 
+                    $serieDoc, (int)$secDoc, $facSerie, $vNCFVence, $cNCF, 
+                    $docTotalFiscal, $discPrcntFiscal, $discSumFiscal, $totalImpuestoFiscal, 
+                    $extraDays, $whsCodeHeader, substr(trim($usuario), 0, 15), substr(trim($terminal), 0, 20), 
+                    $tNegocio, $docTotalFiscal
+                ]);
+                $docEntry = (int)$pdo->query('SELECT SCOPE_IDENTITY()')->fetchColumn();
+                if (!$docEntry) $docEntry = (int)$pdo->lastInsertId();
+                if (!$docEntry) throw new Exception("Error al obtener DocEntry de cabecera POSOINV.");
+
+                // 4. INSERTAR DETALLE (POSINV1) Y REBAJAR INVENTARIO
+                $sqlD = "INSERT INTO POSINV1 (C_DocEntry, LineNum, ItemCode, Dscription, Quantity, PriceBefDi, Price, DiscPrcnt, LineTotal, VatPrcnt, VatSum, TaxCode, WhsCode)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmtD = $pdo->prepare($sqlD);
+
+                $stmtCheckInv  = $pdo->prepare("SELECT InvntItem, DfltWH FROM posOITM WHERE ItemCode = ?");
+                $stmtUpdOITM   = $pdo->prepare("UPDATE posOITM SET OnHand = ISNULL(OnHand, 0) - ? WHERE ItemCode = ? AND InvntItem = 'Y'");
+                $stmtCheckOITW = $pdo->prepare("SELECT COUNT(*) FROM posOITW WHERE ItemCode = ? AND WhsCode = ?");
+                $stmtUpdOITW   = $pdo->prepare("UPDATE posOITW SET OnHand = ISNULL(OnHand, 0) - ? WHERE ItemCode = ? AND WhsCode = ?");
+                $stmtInsOITW   = $pdo->prepare("INSERT INTO posOITW (ItemCode, WhsCode, OnHand) VALUES (?, ?, ?)");
+                $stmtFirstWhs  = $pdo->query("SELECT TOP 1 WhsCode FROM posOWHS ORDER BY WhsCode ASC");
+                $fallbackWhs   = $stmtFirstWhs ? $stmtFirstWhs->fetchColumn() : '01';
+
+                foreach ($lineasProcesadas as $i => $lProc) {
+                    $itemCode = $lProc['ItemCode'];
+                    $cant = $lProc['Quantity'];
+                    $precioCatalogo = $lProc['PriceBefDi'];
+                    $precioReal = $lProc['Price'];
+                    $descP = $lProc['DiscPrcnt'];
+                    $lineTotal = $lProc['LineTotal'];
+                    $impP = $lProc['VatPrcnt'];
+                    $impuesto = $lProc['VatSum'];
+                    $whsCodeLine = $lProc['WhsCode'];
+
+                    $stmtD->execute([
+                        intval($docEntry), intval($i), $itemCode, 
+                        $lProc['Dscription'], $cant, $precioCatalogo, $precioReal, 
+                        $descP, $lineTotal, $impP, $impuesto, $lProc['TaxCode'], 
+                        $whsCodeLine
+                    ]);
+
+                    // REBAJA DE INVENTARIO: Solo para artículos con control de inventario (InvntItem = 'Y')
+                    if (!empty($itemCode) && $cant > 0) {
+                        $stmtCheckInv->execute([$itemCode]);
+                        $itemInfo = $stmtCheckInv->fetch(PDO::FETCH_ASSOC);
+
+                        if ($itemInfo && ($itemInfo['InvntItem'] ?? '') === 'Y') {
+                            // 1. Rebajar existencia en el maestro posOITM
+                            $stmtUpdOITM->execute([$cant, $itemCode]);
+                            // 2. Determinar almacén destino (línea -> almacén predeterminado -> primer almacén activo)
+                            $targetWhs = !empty($whsCodeLine) ? $whsCodeLine : (!empty($itemInfo['DfltWH']) ? $itemInfo['DfltWH'] : $fallbackWhs);
+
+                            if (!empty($targetWhs)) {
+                                $stmtCheckOITW->execute([$itemCode, $targetWhs]);
+                                if ($stmtCheckOITW->fetchColumn() > 0) {
+                                    // 3. Rebajar existencia en el almacén posOITW
+                                    $stmtUpdOITW->execute([$cant, $itemCode, $targetWhs]);
+                                } else {
+                                    $stmtInsOITW->execute([$itemCode, $targetWhs, -$cant]);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 5. INSERTAR APROBACIONES ARS
+                $sqlARS = "INSERT INTO AprobacionARS (
+                                TipoSocio, CardCode, CardName, NumExpediente, NumAfiliado,
+                                CardCode_ARS, NumAprobacion, FechaAprobacionT, FechaAprobacionD,
+                                FechaVencimientoT, FechaVencimientoD, MontoAprobado, PorcentajeCober,
+                                MontoResponsable, DocEntry_Factura, NumFactura, FechaFacturaT,
+                                FechaFacturaD, TipoServicio, Observaciones, Status, U_user,
+                                CreateDateT, CreateDateD
+                           ) VALUES (
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?,
+                                ?, ?, ?, ?,
+                                ?, ?, ?, ?,
+                                ?, ?, ?, 'P', ?,
+                                GETDATE(), CAST(GETDATE() AS DATE)
+                           )";
+                $stmtARS = $pdo->prepare($sqlARS);
+
+                // Consultar datos maestros del paciente para garantizar NumExpediente y afiliación
+                $stmtPacInfo = $pdo->prepare("SELECT U_expediente, U_CadenaID, U_SubGrupo FROM posOCRD WHERE CardCode = ?");
+                $stmtPacInfo->execute([$cardCode]);
+                $pacInfoDb = $stmtPacInfo->fetch(PDO::FETCH_ASSOC);
+                $pacExpFallback = ($pacInfoDb && !empty($pacInfoDb['U_expediente'])) ? intval($pacInfoDb['U_expediente']) : null;
+                $pacAfilFallback = ($pacInfoDb && !empty($pacInfoDb['U_CadenaID'])) ? trim($pacInfoDb['U_CadenaID']) : '';
+                $pacArsFallback = ($pacInfoDb && !empty($pacInfoDb['U_SubGrupo'])) ? trim($pacInfoDb['U_SubGrupo']) : '';
+
+                if ($hayAprobacionesPorArticulo) {
+                    // Si hubo algún artículo con 100% en esta venta mixta
+                    if (!empty($articulos100)) {
+                        foreach ($articulos100 as $item100) {
+                            $ap = $item100['ap'];
+                            $arsTipoSocio = substr(trim($ap['TipoSocio'] ?? 'P'), 0, 15);
+                            $arsCardCode = substr(trim($ap['CardCode'] ?? $cardCode), 0, 100);
+                            $arsCardName = substr(trim($ap['CardName'] ?? $cardName), 0, 100);
+                            $arsNumExp = !empty($ap['NumExpediente']) ? intval($ap['NumExpediente']) : $pacExpFallback;
+                            $arsNumAfiliado = !empty($ap['NumAfiliado']) ? substr(trim($ap['NumAfiliado']), 0, 50) : substr($pacAfilFallback, 0, 50);
+                            $arsCardCodeARS = !empty($ap['CardCode_ARS']) ? substr(trim($ap['CardCode_ARS']), 0, 100) : substr($pacArsFallback, 0, 100);
+                            $numAp = substr(trim($ap['NumAprobacion'] ?? ''), 0, 50);
+
+                            $arsFechaAprobT = !empty($ap['FechaAprobacionT']) ? $ap['FechaAprobacionT'] : date('Y-m-d H:i:s');
+                            $arsFechaAprobD = !empty($ap['FechaAprobacionD']) ? $ap['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
+                            $arsFechaVencT = !empty($ap['FechaVencimientoT']) ? $ap['FechaVencimientoT'] : null;
+                            $arsFechaVencD = !empty($ap['FechaVencimientoD']) ? $ap['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
+
+                            $rawTipoServ = trim($ap['TipoServicio'] ?? $item100['Dscription']);
+                            $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
+                            $arsTipoServicio = substr($arsTipoServicio, 0, 50);
+                            $arsObservaciones = substr(trim($ap['Observaciones'] ?? ('Atención médica 100% cubierta por ARS: ' . $item100['Dscription'])), 0, 254);
+
+                            $stmtARS->execute([
+                                $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
+                                $arsCardCodeARS, $numAp, $arsFechaAprobT, $arsFechaAprobD,
+                                $arsFechaVencT, $arsFechaVencD, $item100['MontoAprobado'], 100.00,
+                                0.00, NULL, 'COBERTURA 100%', date('Y-m-d H:i:s'),
+                                date('Y-m-d'), $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                            ]);
+                        }
+                    }
+
+                    // Aprobaciones con copago ancladas a la factura emitida
+                    foreach ($articulosCopagoARS as $itemCopago) {
+                        $ap = $itemCopago['ap'];
+                        $arsTipoSocio = substr(trim($ap['TipoSocio'] ?? 'P'), 0, 15);
+                        $arsCardCode = substr(trim($ap['CardCode'] ?? $cardCode), 0, 100);
+                        $arsCardName = substr(trim($ap['CardName'] ?? $cardName), 0, 100);
+                        $arsNumExp = !empty($ap['NumExpediente']) ? intval($ap['NumExpediente']) : $pacExpFallback;
+                        $arsNumAfiliado = !empty($ap['NumAfiliado']) ? substr(trim($ap['NumAfiliado']), 0, 50) : substr($pacAfilFallback, 0, 50);
+                        $arsCardCodeARS = !empty($ap['CardCode_ARS']) ? substr(trim($ap['CardCode_ARS']), 0, 100) : substr($pacArsFallback, 0, 100);
+                        $numAp = substr(trim($ap['NumAprobacion'] ?? ''), 0, 50);
+
+                        $arsFechaAprobT = !empty($ap['FechaAprobacionT']) ? $ap['FechaAprobacionT'] : date('Y-m-d H:i:s');
+                        $arsFechaAprobD = !empty($ap['FechaAprobacionD']) ? $ap['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
+                        $arsFechaVencT = !empty($ap['FechaVencimientoT']) ? $ap['FechaVencimientoT'] : null;
+                        $arsFechaVencD = !empty($ap['FechaVencimientoD']) ? $ap['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
+
+                        $rawTipoServ = trim($ap['TipoServicio'] ?? $itemCopago['Dscription']);
+                        $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
+                        $arsTipoServicio = substr($arsTipoServicio, 0, 50);
+                        $arsObservaciones = substr(trim($ap['Observaciones'] ?? ('Copago paciente por: ' . $itemCopago['Dscription'])), 0, 254);
+
+                        $stmtARS->execute([
+                            $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
+                            $arsCardCodeARS, $numAp, $arsFechaAprobT, $arsFechaAprobD,
+                            $arsFechaVencT, $arsFechaVencD, $itemCopago['MontoAprobado'], $itemCopago['PorcentajeCober'],
+                            $itemCopago['MontoResponsable'], intval($docEntry), $NumAtCard, date('Y-m-d H:i:s'),
+                            $docDate, $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                        ]);
+                    }
+                } elseif (!empty($numAprobacion)) {
+                    $arsTipoSocio = substr(trim($aprobacionARS['TipoSocio'] ?? 'P'), 0, 15);
+                    $arsCardCode = substr(trim($aprobacionARS['CardCode'] ?? $cardCode), 0, 100);
+                    $arsCardName = substr(trim($aprobacionARS['CardName'] ?? $cardName), 0, 100);
+                    $arsNumExp = !empty($aprobacionARS['NumExpediente']) ? intval($aprobacionARS['NumExpediente']) : null;
+                    $arsNumAfiliado = substr(trim($aprobacionARS['NumAfiliado'] ?? ''), 0, 50);
+                    $arsCardCodeARS = substr(trim($aprobacionARS['CardCode_ARS'] ?? ''), 0, 100);
+
+                    $arsFechaAprobT = !empty($aprobacionARS['FechaAprobacionT']) ? $aprobacionARS['FechaAprobacionT'] : date('Y-m-d H:i:s');
+                    $arsFechaAprobD = !empty($aprobacionARS['FechaAprobacionD']) ? $aprobacionARS['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
+                    $arsFechaVencT = !empty($aprobacionARS['FechaVencimientoT']) ? $aprobacionARS['FechaVencimientoT'] : null;
+                    $arsFechaVencD = !empty($aprobacionARS['FechaVencimientoD']) ? $aprobacionARS['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
+
+                    $montoAprobFinal = $tieneCopagoARS ? $arsMontoAprobado : floatval($aprobacionARS['MontoAprobado'] ?? 0);
+                    $porcentajeFinal = $tieneCopagoARS ? $arsPorcentajeCober : floatval($aprobacionARS['PorcentajeCober'] ?? 0);
+                    $montoRespFinal = $tieneCopagoARS ? $copagoObjetivo : floatval($aprobacionARS['MontoResponsable'] ?? 0);
+
+                    $rawTipoServ = trim($aprobacionARS['TipoServicio'] ?? 'CONSULTA MEDICA');
+                    $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
+                    $arsTipoServicio = substr($arsTipoServicio, 0, 50);
+                    $arsObservaciones = substr(trim($aprobacionARS['Observaciones'] ?? ''), 0, 254);
+
+                    $stmtARS->execute([
+                        $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
+                        $arsCardCodeARS, $numAprobacion, $arsFechaAprobT, $arsFechaAprobD,
+                        $arsFechaVencT, $arsFechaVencD, $montoAprobFinal, $porcentajeFinal,
+                        $montoRespFinal, intval($docEntry), $NumAtCard, date('Y-m-d H:i:s'),
+                        $docDate, $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                    ]);
+                }
+
+                // 6. REGISTRAR EN ecf_xml_invoice
+                if (!empty($cNCF)) {
+                    require_once __DIR__ . '/../config/EcfHelper.php';
+                    EcfHelper::registrarEcfXml(
+                        $pdo,
+                        $docEntry,
+                        $NumAtCard,
+                        $facSerie,
+                        $cNCF,
+                        $vNCFVence,
+                        $facNit,
+                        $extraDays,
+                        $docDate,
+                        'INVOICE'
+                    );
+                }
+
+                $sciaSerie = $serieDoc;
+                $sciaDocNum = (int)$secDoc;
+
+            } else {
+                // =========================================================================
+                // CASO 2: PAGO DE FACTURA DE CRÉDITO PRE-EXISTENTE
+                // =========================================================================
+                // Consultar Factura y Aprobación ARS si existe
+                $sqlFac = "
+                    SELECT 
+                        f.DocTotal, 
+                        f.U_SCIASerie, 
+                        f.U_SCIADocNum,
+                        f.PaidToDate,
+                        a.MontoResponsable
+                    FROM POSOINV f
+                    LEFT JOIN AprobacionARS a ON f.C_DocEntry = a.DocEntry_Factura AND a.Status <> 'X'
+                    WHERE f.C_DocEntry = ?
+                ";
+                $stmtFac = $pdo->prepare($sqlFac);
+                $stmtFac->execute([$docEntry]);
+                $fac = $stmtFac->fetch(PDO::FETCH_ASSOC);
+
+                if (!$fac) throw new Exception("Factura no encontrada o ya procesada.");
+
+                $totalFactura = floatval($fac['DocTotal']);
+                // Si hay un copago de ARS, ese es el monto esperado a cobrar, sino el total de la factura
+                $totalCobrar = isset($fac['MontoResponsable']) ? floatval($fac['MontoResponsable']) : $totalFactura;
+
+                // Validación usando $totalCobrar en lugar de DocTotal general
+                if ($totalPagado < $totalCobrar - 0.001) {
+                    throw new Exception("El monto total ingresado (RD$ " . number_format($totalPagado, 2) . ") es menor al total a pagar (RD$ " . number_format($totalCobrar, 2) . ").");
+                }
+
+                $sciaSerie = substr($fac['U_SCIASerie'] ?? '', 0, 20);
+                $sciaDocNum = $fac['U_SCIADocNum'] ?? 0;
+
+                // Actualizar monto pagado y cerrar factura si se completa el pago
+                // La factura se ha pagado en su totalidad (validado arriba), así que la cerramos.
+                $pdo->prepare("UPDATE POSOINV 
+                               SET PaidToDate = ISNULL(PaidToDate, 0) + ?, 
+                                   DocStatus = CASE WHEN (ISNULL(PaidToDate, 0) + ?) >= DocTotal THEN 'C' ELSE 'O' END 
+                               WHERE C_DocEntry = ?")
+                    ->execute([$totalPagado, $totalPagado, $docEntry]);
+            }
+
+            // =========================================================================
+            // REGISTRO DE MOVIMIENTOS EN DIARIO_CAJA_DET (COMÚN A AMBOS CASOS)
+            // =========================================================================
             $sqlInsDet = "INSERT INTO diario_caja_det (id_diario_caja, id_tipo_movimiento, id_documento, monto_factura, monto_caja, comentario, U_SCIASerie, U_SCIADocNum, referencia, trans_ref, trans_banc)
                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             $stmtInsDet = $pdo->prepare($sqlInsDet);
-
-            $sciaSerie = substr($fac['U_SCIASerie'] ?? '', 0, 20);
-            $sciaDocNum = $fac['U_SCIADocNum'] ?? 0;
 
             // 1. Efectivo (id_tipo_movimiento = 1)
             if ($efectivo > 0) {
                 $stmtInsDet->execute([
                     $id_diario_caja,
-                    1, // Tipo 1: Efectivo
+                    1,
                     $docEntry,
                     $totalCobrar,
                     $efectivo,
                     'Cobro Factura Efectivo',
                     $sciaSerie,
                     $sciaDocNum,
-                    '',
-                    '',
-                    ''
+                    '', '', ''
                 ]);
             }
 
-            // 2. Tarjetas (id_tipo_movimiento = 2) - Se inserta cada tarjeta como movimiento individual
+            // 2. Tarjetas (id_tipo_movimiento = 2)
             $tarjetaIdx = 1;
             foreach ($tarjetas as $tj) {
                 $montoTj = floatval($tj['monto']);
@@ -370,7 +692,7 @@ class FacturaController {
 
                 $stmtInsDet->execute([
                     $id_diario_caja,
-                    2, // Tipo 2: Tarjeta / POS
+                    2,
                     $docEntry,
                     $totalCobrar,
                     $montoTj,
@@ -384,7 +706,7 @@ class FacturaController {
                 $tarjetaIdx++;
             }
 
-            // 3. Transferencia Bancaria (id_tipo_movimiento = 4)
+            // 3. Transferencia (id_tipo_movimiento = 4)
             if ($montoTransferencia > 0) {
                 $bancoStr = $bancoTransferencia ? "Banco: $bancoTransferencia - " : "";
                 $comentarioTransf = substr("Cobro Transferencia - {$bancoStr}Ref: $refTransferencia", 0, 300);
@@ -393,7 +715,7 @@ class FacturaController {
 
                 $stmtInsDet->execute([
                     $id_diario_caja,
-                    4, // Tipo 4: Transferencia Bancaria
+                    4,
                     $docEntry,
                     $totalCobrar,
                     $montoTransferencia,
@@ -406,29 +728,31 @@ class FacturaController {
                 ]);
             }
 
-            // 4. Si es cobro sin monto en caja (ej: 100% cubierto por seguro o exonerado)
+            // 4. Exonerado / Cobertura Especial (id_tipo_movimiento = 5)
             if ($efectivo <= 0 && $totalTarjetas <= 0 && $montoTransferencia <= 0) {
                 $stmtInsDet->execute([
                     $id_diario_caja,
-                    5, // Tipo 5: Liquidación Especial / ARS
+                    5,
                     $docEntry,
                     $totalCobrar,
                     0,
                     'Cobro Cobertura Total ARS',
                     $sciaSerie,
                     $sciaDocNum,
-                    '',
-                    '',
-                    ''
+                    '', '', ''
                 ]);
             }
 
-            // Actualizar monto pagado y estado en POSOINV
-            $pdo->prepare("UPDATE POSOINV SET PaidToDate = ISNULL(PaidToDate, 0) + ?, DocStatus = 'O' WHERE C_DocEntry = ?")
-                ->execute([$totalPagado, $docEntry]);
+            // Limpiar la sesión de cobro pendiente ya completada
+            unset($_SESSION['datos_cobro_pendiente']);
 
             $pdo->commit();
-            echo json_encode(['status' => 'success', 'msg' => 'Pago registrado correctamente en caja.']);
+            echo json_encode([
+                'status' => 'success', 
+                'msg' => 'Pago y Factura ' . ($NumAtCard ?? ('#' . $docEntry)) . ' registrados correctamente.',
+                'docEntry' => $docEntry,
+                'NCF' => $cNCF ?? ''
+            ]);
 
         } catch (Exception $e) {
             $pdo->rollBack();
@@ -490,91 +814,394 @@ class FacturaController {
             $docTotal = $totalNeto - $descGlobal + $totalImpuesto;
 
             // =========================================================================
-            // DETECCIÓN Y REGISTRO DIRECTO DE APROBACIÓN CON COBERTURA 100% ARS
-            // Cuando el seguro cubre la totalidad del servicio y el paciente no paga nada
-            // (MontoResponsable == 0), se registra la Aprobación sin emitir factura de
-            // paciente en $0, sin consumir NCF y sin alterar ecf_xml_invoice ni caja.
+            // DETECCIÓN Y PROCESAMIENTO DE APROBACIONES ARS
             // =========================================================================
             $aprobacionARS = $datos['aprobacion_ars'] ?? null;
             $numAprobacion = trim($header['U_NumAprobacion'] ?? ($aprobacionARS['NumAprobacion'] ?? ''));
-            $montoAprobadoARS = floatval($aprobacionARS['MontoAprobado'] ?? 0);
-            $porcentajeCoberARS = floatval($aprobacionARS['PorcentajeCober'] ?? 0);
-            $montoResponsableARS = floatval($aprobacionARS['MontoResponsable'] ?? 0);
 
-            $esCoberturaTotal = (
-                !empty($aprobacionARS) && 
-                !empty($numAprobacion) && 
-                ($porcentajeCoberARS >= 99.99 || $montoResponsableARS <= 0.001) &&
-                ($montoAprobadoARS > 0 || $docTotal > 0)
-            );
-
-            if ($esCoberturaTotal) {
-                $arsTipoSocio = substr(trim($aprobacionARS['TipoSocio'] ?? 'P'), 0, 15);
-                $arsCardCode = substr(trim($aprobacionARS['CardCode'] ?? $cardCode), 0, 100);
-                $arsCardName = substr(trim($aprobacionARS['CardName'] ?? $cardName), 0, 100);
-                $arsNumExp = !empty($aprobacionARS['NumExpediente']) ? intval($aprobacionARS['NumExpediente']) : null;
-                $arsNumAfiliado = substr(trim($aprobacionARS['NumAfiliado'] ?? ''), 0, 50);
-                $arsCardCodeARS = substr(trim($aprobacionARS['CardCode_ARS'] ?? ''), 0, 100);
-
-                $arsFechaAprobT = !empty($aprobacionARS['FechaAprobacionT']) ? $aprobacionARS['FechaAprobacionT'] : date('Y-m-d H:i:s');
-                $arsFechaAprobD = !empty($aprobacionARS['FechaAprobacionD']) ? $aprobacionARS['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
-                $arsFechaVencT = !empty($aprobacionARS['FechaVencimientoT']) ? $aprobacionARS['FechaVencimientoT'] : null;
-                $arsFechaVencD = !empty($aprobacionARS['FechaVencimientoD']) ? $aprobacionARS['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
-
-                $montoRealAprobado = ($montoAprobadoARS > 0) ? $montoAprobadoARS : $docTotal;
-
-                // Tipo de servicio: concatenar descripción de artículos seleccionados si no vino explícito
-                $tipoServicioInput = trim($aprobacionARS['TipoServicio'] ?? '');
-                if (empty($tipoServicioInput) && !empty($lines)) {
-                    $nombresItems = array_map(function($l) { return trim($l['ItemName'] ?? $l['ItemCode'] ?? ''); }, $lines);
-                    $tipoServicioInput = implode(', ', array_filter($nombresItems));
+            // 1. Verificar si existen aprobaciones individuales por artículo
+            $hayAprobacionesPorArticulo = false;
+            foreach ($lines as $l) {
+                if (!empty($l['aprobacion_ars']) && !empty($l['aprobacion_ars']['NumAprobacion'])) {
+                    $hayAprobacionesPorArticulo = true;
+                    break;
                 }
-                $rawTipoServ = !empty($tipoServicioInput) ? $tipoServicioInput : 'CONSULTA MEDICA';
-                $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
-                $arsTipoServicio = substr($arsTipoServicio, 0, 50);
-                $arsObservaciones = substr(trim($aprobacionARS['Observaciones'] ?? 'Atención médica autorizada bajo Cobertura 100% ARS'), 0, 254);
-
-                $sqlARS = "INSERT INTO AprobacionARS (
-                                TipoSocio, CardCode, CardName, NumExpediente, NumAfiliado,
-                                CardCode_ARS, NumAprobacion, FechaAprobacionT, FechaAprobacionD,
-                                FechaVencimientoT, FechaVencimientoD, MontoAprobado, PorcentajeCober,
-                                MontoResponsable, DocEntry_Factura, NumFactura, FechaFacturaT,
-                                FechaFacturaD, TipoServicio, Observaciones, Status, U_user,
-                                CreateDateT, CreateDateD
-                           ) VALUES (
-                                ?, ?, ?, ?, ?,
-                                ?, ?, ?, ?,
-                                ?, ?, ?, 100.00,
-                                0.00, NULL, 'COBERTURA 100%', GETDATE(),
-                                CAST(GETDATE() AS DATE), ?, ?, 'P', ?,
-                                GETDATE(), CAST(GETDATE() AS DATE)
-                           )";
-                $stmtARS = $pdo->prepare($sqlARS);
-                $stmtARS->execute([
-                    $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
-                    $arsCardCodeARS, $numAprobacion, $arsFechaAprobT, $arsFechaAprobD,
-                    $arsFechaVencT, $arsFechaVencD, $montoRealAprobado,
-                    $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
-                ]);
-
-                $idARS = (int)$pdo->query('SELECT SCOPE_IDENTITY()')->fetchColumn();
-                if (!$idARS) $idARS = (int)$pdo->lastInsertId();
-
-                $pdo->commit();
-
-                echo json_encode([
-                    'status' => 'success',
-                    'esCoberturaTotal' => true,
-                    'msg' => 'Aprobación ARS registrada exitosamente con Cobertura 100%.',
-                    'numAprobacion' => $numAprobacion,
-                    'idARS' => $idARS,
-                    'montoAprobado' => $montoRealAprobado
-                ]);
-                return;
             }
 
             // =========================================================================
-            // FLUJO NORMAL DE FACTURACIÓN CON NCF Y PAGO DEL PACIENTE
+            // CASO A: APROBACIONES REGISTRADAS POR ARTÍCULO / PROCEDIMIENTO INDIVIDUAL
+            // =========================================================================
+            if ($hayAprobacionesPorArticulo) {
+                $articulos100 = [];
+                $articulosFacturables = [];
+                $articulosCopagoARS = [];
+
+                foreach ($lines as $i => $line) {
+                    $itemCode = substr(trim($line['ItemCode'] ?? ''), 0, 20);
+                    $cant = floatval($line['Quantity'] ?? 1);
+                    if ($cant <= 0) $cant = 1.0;
+                    $precioCatalogo = floatval($line['PriceBefDi'] ?? 0);
+                    if ($precioCatalogo <= 0) $precioCatalogo = floatval($line['Price'] ?? 0);
+                    $descPOrig = floatval($line['DiscPrcnt'] ?? 0);
+                    $impP = floatval($line['VatPrcnt'] ?? 0);
+                    $whsCodeLine = substr(trim($line['WhsCode'] ?? ''), 0, 20);
+                    $itemName = substr(trim($line['ItemName'] ?? ($line['Dscription'] ?? '')), 0, 100);
+                    $taxCode = substr(trim($line['TaxCode'] ?? 'EXE'), 0, 20);
+
+                    $brutoLinea = $cant * $precioCatalogo;
+                    $descLineaOrig = $brutoLinea * ($descPOrig / 100);
+                    $netoLineaOrig = $brutoLinea - $descLineaOrig;
+                    $impLineaOrig = $netoLineaOrig * ($impP / 100);
+                    $totalLineaBruto = $netoLineaOrig + $impLineaOrig;
+
+                    $ap = $line['aprobacion_ars'] ?? null;
+                    if (!empty($ap) && !empty($ap['NumAprobacion'])) {
+                        $pctCob = floatval($ap['PorcentajeCober'] ?? 0);
+                        $mResp = floatval($ap['MontoResponsable'] ?? 0);
+                        $mAprob = floatval($ap['MontoAprobado'] ?? 0);
+                        $es100 = ($pctCob >= 99.99 || ($mResp <= 0.001 && $mAprob > 0));
+
+                        if ($es100) {
+                            // Cobertura 100%: Solo se registra en AprobacionARS. NO ensucia POSINV1 con copago 0
+                            $articulos100[] = [
+                                'line' => $line,
+                                'ap' => $ap,
+                                'ItemCode' => $itemCode,
+                                'Dscription' => $itemName,
+                                'Quantity' => $cant,
+                                'WhsCode' => $whsCodeLine,
+                                'MontoAprobado' => ($mAprob > 0) ? $mAprob : $totalLineaBruto
+                            ];
+                        } else {
+                            // Cobertura parcial: El paciente paga el copago $mResp directamente en la línea.
+                            // La cobertura ARS no es un descuento comercial al paciente en POSINV1;
+                            // es el valor neto/copago a facturar para evitar doble descuento en Nota de Crédito.
+                            $lineTotalAjustado = round($mResp, 2);
+                            $precioEfectivo = ($cant > 0) ? round($lineTotalAjustado / $cant, 4) : $lineTotalAjustado;
+                            $impuestoAjustado = round($lineTotalAjustado * ($impP / 100), 2);
+
+                            $lineasFacturables[] = [
+                                'ItemCode' => $itemCode,
+                                'Dscription' => $itemName,
+                                'Quantity' => $cant,
+                                'PriceBefDi' => $precioCatalogo,
+                                'Price' => $precioEfectivo,
+                                'DiscPrcnt' => 0.00,
+                                'LineTotal' => $lineTotalAjustado,
+                                'VatPrcnt' => $impP,
+                                'VatSum' => $impuestoAjustado,
+                                'TaxCode' => $taxCode,
+                                'WhsCode' => $whsCodeLine
+                            ];
+
+                            $articulosCopagoARS[] = [
+                                'line' => $line,
+                                'ap' => $ap,
+                                'ItemCode' => $itemCode,
+                                'Dscription' => $itemName,
+                                'MontoAprobado' => ($mAprob > 0) ? $mAprob : max(0, $totalLineaBruto - $mResp),
+                                'PorcentajeCober' => $pctCob,
+                                'MontoResponsable' => $lineTotalAjustado
+                            ];
+                        }
+                    } else {
+                        // Artículo privado (sin seguro)
+                        $impuestoPrivado = round($netoLineaOrig * ($impP / 100), 2);
+                        $lineasFacturables[] = [
+                            'ItemCode' => $itemCode,
+                            'Dscription' => $itemName,
+                            'Quantity' => $cant,
+                            'PriceBefDi' => $precioCatalogo,
+                            'Price' => floatval($line['Price'] ?? $precioCatalogo),
+                            'DiscPrcnt' => $descPOrig,
+                            'LineTotal' => round($netoLineaOrig, 2),
+                            'VatPrcnt' => $impP,
+                            'VatSum' => $impuestoPrivado,
+                            'TaxCode' => $taxCode,
+                            'WhsCode' => $whsCodeLine
+                        ];
+                    }
+                }
+
+                // SUB-CASO A.1: TODOS LOS ARTÍCULOS ESTÁN AL 100% CUBIERTOS POR ARS
+                if (empty($lineasFacturables)) {
+                    $stmtCheckInv  = $pdo->prepare("SELECT InvntItem, DfltWH FROM posOITM WHERE ItemCode = ?");
+                    $stmtUpdOITM   = $pdo->prepare("UPDATE posOITM SET OnHand = ISNULL(OnHand, 0) - ? WHERE ItemCode = ? AND InvntItem = 'Y'");
+                    $stmtCheckOITW = $pdo->prepare("SELECT COUNT(*) FROM posOITW WHERE ItemCode = ? AND WhsCode = ?");
+                    $stmtUpdOITW   = $pdo->prepare("UPDATE posOITW SET OnHand = ISNULL(OnHand, 0) - ? WHERE ItemCode = ? AND WhsCode = ?");
+                    $stmtInsOITW   = $pdo->prepare("INSERT INTO posOITW (ItemCode, WhsCode, OnHand) VALUES (?, ?, ?)");
+                    $stmtFirstWhs  = $pdo->query("SELECT TOP 1 WhsCode FROM posOWHS ORDER BY WhsCode ASC");
+                    $fallbackWhs   = $stmtFirstWhs ? $stmtFirstWhs->fetchColumn() : '01';
+
+                    $sqlARS100 = "INSERT INTO AprobacionARS (
+                                    TipoSocio, CardCode, CardName, NumExpediente, NumAfiliado,
+                                    CardCode_ARS, NumAprobacion, FechaAprobacionT, FechaAprobacionD,
+                                    FechaVencimientoT, FechaVencimientoD, MontoAprobado, PorcentajeCober,
+                                    MontoResponsable, DocEntry_Factura, NumFactura, FechaFacturaT,
+                                    FechaFacturaD, TipoServicio, Observaciones, Status, U_user,
+                                    CreateDateT, CreateDateD
+                               ) VALUES (
+                                    ?, ?, ?, ?, ?,
+                                    ?, ?, ?, ?,
+                                    ?, ?, ?, 100.00,
+                                    0.00, NULL, 'COBERTURA 100%', GETDATE(),
+                                    CAST(GETDATE() AS DATE), ?, ?, 'P', ?,
+                                    GETDATE(), CAST(GETDATE() AS DATE)
+                               )";
+                    $stmtARS100 = $pdo->prepare($sqlARS100);
+
+                    foreach ($articulos100 as $item100) {
+                        $ap = $item100['ap'];
+                        $itemCode = $item100['ItemCode'];
+                        $cant = $item100['Quantity'];
+                        $whsCodeLine = $item100['WhsCode'];
+
+                        if (!empty($itemCode) && $cant > 0) {
+                            $stmtCheckInv->execute([$itemCode]);
+                            $itemInfo = $stmtCheckInv->fetch(PDO::FETCH_ASSOC);
+                            if ($itemInfo && ($itemInfo['InvntItem'] ?? '') === 'Y') {
+                                $stmtUpdOITM->execute([$cant, $itemCode]);
+                                $targetWhs = !empty($whsCodeLine) ? $whsCodeLine : (!empty($itemInfo['DfltWH']) ? $itemInfo['DfltWH'] : $fallbackWhs);
+                                if (!empty($targetWhs)) {
+                                    $stmtCheckOITW->execute([$itemCode, $targetWhs]);
+                                    if ($stmtCheckOITW->fetchColumn() > 0) {
+                                        $stmtUpdOITW->execute([$cant, $itemCode, $targetWhs]);
+                                    } else {
+                                        $stmtInsOITW->execute([$itemCode, $targetWhs, -$cant]);
+                                    }
+                                }
+                            }
+                        }
+
+                        $arsTipoSocio = substr(trim($ap['TipoSocio'] ?? 'P'), 0, 15);
+                        $arsCardCode = substr(trim($ap['CardCode'] ?? $cardCode), 0, 100);
+                        $arsCardName = substr(trim($ap['CardName'] ?? $cardName), 0, 100);
+                        $arsNumExp = !empty($ap['NumExpediente']) ? intval($ap['NumExpediente']) : null;
+                        $arsNumAfiliado = substr(trim($ap['NumAfiliado'] ?? ''), 0, 50);
+                        $arsCardCodeARS = substr(trim($ap['CardCode_ARS'] ?? ''), 0, 100);
+                        $numAp = substr(trim($ap['NumAprobacion'] ?? ''), 0, 50);
+
+                        $arsFechaAprobT = !empty($ap['FechaAprobacionT']) ? $ap['FechaAprobacionT'] : date('Y-m-d H:i:s');
+                        $arsFechaAprobD = !empty($ap['FechaAprobacionD']) ? $ap['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
+                        $arsFechaVencT = !empty($ap['FechaVencimientoT']) ? $ap['FechaVencimientoT'] : null;
+                        $arsFechaVencD = !empty($ap['FechaVencimientoD']) ? $ap['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
+
+                        $rawTipoServ = trim($ap['TipoServicio'] ?? $item100['Dscription']);
+                        $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
+                        $arsTipoServicio = substr($arsTipoServicio, 0, 50);
+                        $arsObservaciones = substr(trim($ap['Observaciones'] ?? ('Atención médica 100% cubierta por ARS: ' . $item100['Dscription'])), 0, 254);
+
+                        $stmtARS100->execute([
+                            $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
+                            $arsCardCodeARS, $numAp, $arsFechaAprobT, $arsFechaAprobD,
+                            $arsFechaVencT, $arsFechaVencD, $item100['MontoAprobado'],
+                            $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                        ]);
+                    }
+
+                    $pdo->commit();
+
+                    echo json_encode([
+                        'status' => 'success',
+                        'esCoberturaTotal' => true,
+                        'msg' => 'Aprobaciones ARS registradas exitosamente con Cobertura 100% (' . count($articulos100) . ' servicio(s)).',
+                        'totalAprobaciones' => count($articulos100)
+                    ]);
+                    return;
+                }
+
+                // SUB-CASO A.2: FACTURACIÓN CON ELEMENTOS COPAGO / PRIVADOS
+                // Los artículos con 100% se conservan en $articulos100 para guardarse al confirmar el cobro
+                // 1. Líneas facturables fiscales
+                $lineasProcesadas = $lineasFacturables;
+                $docTotalFiscal = 0;
+                $totalImpuestoFiscal = 0;
+                foreach ($lineasProcesadas as $lp) {
+                    $docTotalFiscal += $lp['LineTotal'] + $lp['VatSum'];
+                    $totalImpuestoFiscal += $lp['VatSum'];
+                }
+                $discSumFiscal = 0;
+                $discPrcntFiscal = 0;
+                $tieneCopagoARS = (!empty($articulosCopagoARS));
+
+            } else {
+                // =========================================================================
+                // CASO B: APROBACIÓN GENERAL PARA TODA LA FACTURA O FACTURA PRIVADA
+                // =========================================================================
+                $montoAprobadoARS = floatval($aprobacionARS['MontoAprobado'] ?? 0);
+                $porcentajeCoberARS = floatval($aprobacionARS['PorcentajeCober'] ?? 0);
+                $montoResponsableARS = floatval($aprobacionARS['MontoResponsable'] ?? 0);
+
+                $esCoberturaTotal = (
+                    !empty($aprobacionARS) && 
+                    !empty($numAprobacion) && 
+                    ($porcentajeCoberARS >= 99.99 || $montoResponsableARS <= 0.001) &&
+                    ($montoAprobadoARS > 0 || $docTotal > 0)
+                );
+
+                if ($esCoberturaTotal) {
+                    $arsTipoSocio = substr(trim($aprobacionARS['TipoSocio'] ?? 'P'), 0, 15);
+                    $arsCardCode = substr(trim($aprobacionARS['CardCode'] ?? $cardCode), 0, 100);
+                    $arsCardName = substr(trim($aprobacionARS['CardName'] ?? $cardName), 0, 100);
+                    $arsNumExp = !empty($aprobacionARS['NumExpediente']) ? intval($aprobacionARS['NumExpediente']) : $pacExpFallback;
+                    $arsNumAfiliado = !empty($aprobacionARS['NumAfiliado']) ? substr(trim($aprobacionARS['NumAfiliado']), 0, 50) : substr($pacAfilFallback, 0, 50);
+                    $arsCardCodeARS = !empty($aprobacionARS['CardCode_ARS']) ? substr(trim($aprobacionARS['CardCode_ARS']), 0, 100) : substr($pacArsFallback, 0, 100);
+
+                    $arsFechaAprobT = !empty($aprobacionARS['FechaAprobacionT']) ? $aprobacionARS['FechaAprobacionT'] : date('Y-m-d H:i:s');
+                    $arsFechaAprobD = !empty($aprobacionARS['FechaAprobacionD']) ? $aprobacionARS['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
+                    $arsFechaVencT = !empty($aprobacionARS['FechaVencimientoT']) ? $aprobacionARS['FechaVencimientoT'] : null;
+                    $arsFechaVencD = !empty($aprobacionARS['FechaVencimientoD']) ? $aprobacionARS['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
+
+                    $montoRealAprobado = ($montoAprobadoARS > 0) ? $montoAprobadoARS : $docTotal;
+
+                    $tipoServicioInput = trim($aprobacionARS['TipoServicio'] ?? '');
+                    if (empty($tipoServicioInput) && !empty($lines)) {
+                        $nombresItems = array_map(function($l) { return trim($l['ItemName'] ?? $l['ItemCode'] ?? ''); }, $lines);
+                        $tipoServicioInput = implode(', ', array_filter($nombresItems));
+                    }
+                    $rawTipoServ = !empty($tipoServicioInput) ? $tipoServicioInput : 'CONSULTA MEDICA';
+                    $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
+                    $arsTipoServicio = substr($arsTipoServicio, 0, 50);
+                    $arsObservaciones = substr(trim($aprobacionARS['Observaciones'] ?? 'Atención médica autorizada bajo Cobertura 100% ARS'), 0, 254);
+
+                    $sqlARS = "INSERT INTO AprobacionARS (
+                                    TipoSocio, CardCode, CardName, NumExpediente, NumAfiliado,
+                                    CardCode_ARS, NumAprobacion, FechaAprobacionT, FechaAprobacionD,
+                                    FechaVencimientoT, FechaVencimientoD, MontoAprobado, PorcentajeCober,
+                                    MontoResponsable, DocEntry_Factura, NumFactura, FechaFacturaT,
+                                    FechaFacturaD, TipoServicio, Observaciones, Status, U_user,
+                                    CreateDateT, CreateDateD
+                               ) VALUES (
+                                    ?, ?, ?, ?, ?,
+                                    ?, ?, ?, ?,
+                                    ?, ?, ?, 100.00,
+                                    0.00, NULL, 'COBERTURA 100%', GETDATE(),
+                                    CAST(GETDATE() AS DATE), ?, ?, 'P', ?,
+                                    GETDATE(), CAST(GETDATE() AS DATE)
+                               )";
+                    $stmtARS = $pdo->prepare($sqlARS);
+                    $stmtARS->execute([
+                        $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
+                        $arsCardCodeARS, $numAprobacion, $arsFechaAprobT, $arsFechaAprobD,
+                        $arsFechaVencT, $arsFechaVencD, $montoRealAprobado,
+                        $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                    ]);
+
+                    $idARS = (int)$pdo->query('SELECT SCOPE_IDENTITY()')->fetchColumn();
+                    if (!$idARS) $idARS = (int)$pdo->lastInsertId();
+
+                    $pdo->commit();
+
+                    echo json_encode([
+                        'status' => 'success',
+                        'esCoberturaTotal' => true,
+                        'msg' => 'Aprobación ARS registrada exitosamente con Cobertura 100%.',
+                        'numAprobacion' => $numAprobacion,
+                        'idARS' => $idARS,
+                        'montoAprobado' => $montoRealAprobado
+                    ]);
+                    return;
+                }
+
+                // Copago para aprobación general
+                $tieneCopagoARS = false;
+                $copagoObjetivo = 0.0;
+                $coberturaARS = 0.0;
+                $arsMontoAprobado = floatval($aprobacionARS['MontoAprobado'] ?? 0);
+                $arsPorcentajeCober = floatval($aprobacionARS['PorcentajeCober'] ?? 0);
+                $arsMontoResponsable = floatval($aprobacionARS['MontoResponsable'] ?? 0);
+
+                if (!empty($numAprobacion) && !empty($aprobacionARS) && !$esCoberturaTotal) {
+                    if ($arsMontoResponsable == 0 && $arsMontoAprobado > 0) {
+                        $arsMontoResponsable = max(0, $docTotal - $arsMontoAprobado);
+                    }
+                    if ($arsMontoAprobado == 0 && $arsMontoResponsable > 0) {
+                        $arsMontoAprobado = max(0, $docTotal - $arsMontoResponsable);
+                    }
+
+                    if ($arsMontoResponsable > 0 && $docTotal > 0 && $arsMontoResponsable < $docTotal) {
+                        $tieneCopagoARS = true;
+                        $copagoObjetivo = round($arsMontoResponsable, 2);
+                        $coberturaARS = round($docTotal - $copagoObjetivo, 2);
+                        if ($arsPorcentajeCober <= 0 && $docTotal > 0) {
+                            $arsPorcentajeCober = round(($coberturaARS / $docTotal) * 100, 2);
+                        }
+                    }
+                }
+
+                $lineasProcesadas = [];
+                $factorCopago = ($tieneCopagoARS && $docTotal > 0) ? ($copagoObjetivo / $docTotal) : 1.0;
+                $acumuladoLineTotal = 0;
+                $acumuladoVat = 0;
+                $numLineas = count($lines);
+
+                foreach ($lines as $i => $line) {
+                    $itemCode = substr(trim($line['ItemCode'] ?? ''), 0, 20);
+                    $cant = floatval($line['Quantity'] ?? 0);
+                    if ($cant <= 0) $cant = 1.0;
+                    $precioCatalogo = floatval($line['PriceBefDi'] ?? 0);
+                    if ($precioCatalogo <= 0) $precioCatalogo = floatval($line['Price'] ?? 0);
+                    $descPOrig = floatval($line['DiscPrcnt'] ?? 0);
+                    $impP = floatval($line['VatPrcnt'] ?? 0);
+                    $whsCodeLine = substr(trim($line['WhsCode'] ?? ''), 0, 20);
+                    $itemName = substr(trim($line['ItemName'] ?? ($line['Dscription'] ?? '')), 0, 100);
+                    $taxCode = substr(trim($line['TaxCode'] ?? 'EXE'), 0, 20);
+
+                    $brutoLinea = $cant * $precioCatalogo;
+                    $descLineaOrig = $brutoLinea * ($descPOrig / 100);
+                    $netoLineaOrig = $brutoLinea - $descLineaOrig;
+
+                    if ($tieneCopagoARS && $docTotal > 0 && $copagoObjetivo > 0) {
+                        if ($i === $numLineas - 1) {
+                            $lineTotalAjustado = round($copagoObjetivo - $acumuladoLineTotal, 2);
+                        } else {
+                            $lineTotalAjustado = round($netoLineaOrig * $factorCopago, 2);
+                            $acumuladoLineTotal += $lineTotalAjustado;
+                        }
+
+                        $precioEfectivo = ($cant > 0) ? round($lineTotalAjustado / $cant, 4) : $lineTotalAjustado;
+                        $impuestoAjustado = round($lineTotalAjustado * ($impP / 100), 2);
+                        $acumuladoVat += $impuestoAjustado;
+
+                        $lineasProcesadas[] = [
+                            'ItemCode' => $itemCode,
+                            'Dscription' => $itemName,
+                            'Quantity' => $cant,
+                            'PriceBefDi' => $precioCatalogo,
+                            'Price' => $precioEfectivo,
+                            'DiscPrcnt' => 0.00,
+                            'LineTotal' => $lineTotalAjustado,
+                            'VatPrcnt' => $impP,
+                            'VatSum' => $impuestoAjustado,
+                            'TaxCode' => $taxCode,
+                            'WhsCode' => $whsCodeLine
+                        ];
+                    } else {
+                        $impuesto = round($netoLineaOrig * ($impP / 100), 2);
+                        $lineasProcesadas[] = [
+                            'ItemCode' => $itemCode,
+                            'Dscription' => $itemName,
+                            'Quantity' => $cant,
+                            'PriceBefDi' => $precioCatalogo,
+                            'Price' => floatval($line['Price'] ?? $precioCatalogo),
+                            'DiscPrcnt' => $descPOrig,
+                            'LineTotal' => round($netoLineaOrig, 2),
+                            'VatPrcnt' => $impP,
+                            'VatSum' => $impuesto,
+                            'TaxCode' => $taxCode,
+                            'WhsCode' => $whsCodeLine
+                        ];
+                    }
+                }
+
+                $docTotalFiscal = $tieneCopagoARS ? $copagoObjetivo : $docTotal;
+                $discSumFiscal = $descGlobal;
+                $discPrcntFiscal = $discPrcnt;
+                $totalImpuestoFiscal = $tieneCopagoARS ? $acumuladoVat : $totalImpuesto;
+            }
+
+            // =========================================================================
+            // VALIDACIÓN DE NCF Y PREPARACIÓN DE INFORMACIÓN DE COBRO
             // =========================================================================
             if (empty($facSerie)) {
                 throw new Exception("Debe seleccionar un cliente con comprobante fiscal (NCF) válido asignado.");
@@ -583,7 +1210,165 @@ class FacturaController {
                 throw new Exception("La serie {$facSerie} es un comprobante de Nota de Débito/Crédito y no puede emitirse como Factura de Venta.");
             }
 
-            $paso = ''; // Se actualiza en cada sub-paso para identificar dónde falla
+            // Validar que existan NCF disponibles para la serie antes de proceder
+            $stmtCheckNCF = $pdo->prepare("SELECT COUNT(*) FROM carga_ncf WHERE UPPER(serie) = ? AND contador < final");
+            $stmtCheckNCF->execute([$facSerie]);
+            if ($stmtCheckNCF->fetchColumn() <= 0) {
+                throw new Exception("No quedan NCF disponibles para la serie " . $facSerie);
+            }
+
+            $whsCodeHeader = !empty($lines) ? substr(trim($lines[0]['WhsCode'] ?? ''), 0, 20) : '';
+            $docDateInput = trim($header['DocDate'] ?? '');
+            $docDate = !empty($docDateInput) ? $docDateInput : date('Y-m-d');
+
+            // Armar información ARS para la pantalla de cobro
+            $arsInfoCobro = null;
+            if ($hayAprobacionesPorArticulo && !empty($articulosCopagoARS)) {
+                $numsAprob = array_map(function($a) { return $a['ap']['NumAprobacion'] ?? ''; }, $articulosCopagoARS);
+                $montoAprobTotal = 0;
+                foreach ($articulosCopagoARS as $a) {
+                    $montoAprobTotal += floatval($a['MontoAprobado'] ?? 0);
+                }
+
+                $cardCodeARS = '';
+                $nombreARS = '';
+                $numAfiliado = '';
+                foreach ($articulosCopagoARS as $a) {
+                    if (!empty($a['ap']['CardCode_ARS'])) {
+                        $cardCodeARS = trim($a['ap']['CardCode_ARS']);
+                    }
+                    if (!empty($a['ap']['NumAfiliado'])) {
+                        $numAfiliado = trim($a['ap']['NumAfiliado']);
+                    }
+                    if (!empty($a['ap']['NombreARS'])) {
+                        $nombreARS = trim($a['ap']['NombreARS']);
+                    }
+                }
+
+                if (empty($cardCodeARS) || empty($nombreARS) || empty($numAfiliado)) {
+                    $stmtPacInfo = $pdo->prepare("SELECT U_SubGrupo, U_CadenaID FROM posOCRD WHERE CardCode = ?");
+                    $stmtPacInfo->execute([$cardCode]);
+                    $pacInfo = $stmtPacInfo->fetch(PDO::FETCH_ASSOC);
+                    if ($pacInfo) {
+                        if (empty($cardCodeARS)) $cardCodeARS = trim($pacInfo['U_SubGrupo'] ?? '');
+                        if (empty($numAfiliado)) $numAfiliado = trim($pacInfo['U_CadenaID'] ?? '');
+                    }
+                }
+
+                if (!empty($cardCodeARS) && empty($nombreARS)) {
+                    $stmtN = $pdo->prepare("SELECT CardName FROM posOCRD WHERE CardCode = ?");
+                    $stmtN->execute([$cardCodeARS]);
+                    $nombreARS = trim($stmtN->fetchColumn() ?: $cardCodeARS);
+                }
+                if (empty($nombreARS)) $nombreARS = (!empty($cardCodeARS) ? $cardCodeARS : 'Seguro ARS');
+
+                $totalBrutoServicios = $montoAprobTotal + $docTotalFiscal;
+                $pctCoberPromedio = ($totalBrutoServicios > 0) ? round(($montoAprobTotal / $totalBrutoServicios) * 100, 1) : 0;
+
+                $arsInfoCobro = [
+                    'NumAprobacion' => implode(', ', array_filter(array_unique($numsAprob))),
+                    'MontoAprobado' => $montoAprobTotal,
+                    'PorcentajeCober' => $pctCoberPromedio,
+                    'MontoResponsable' => $docTotalFiscal,
+                    'TotalBruto' => $totalBrutoServicios,
+                    'CardCode_ARS' => $cardCodeARS,
+                    'NombreARS' => $nombreARS,
+                    'NumAfiliado' => $numAfiliado,
+                    'TipoServicio' => (count($articulosCopagoARS) + (!empty($articulos100) ? count($articulos100) : 0)) . ' servicio(s) autorizados',
+                    'esPorArticulos' => true
+                ];
+            } elseif (!empty($numAprobacion) && !empty($aprobacionARS)) {
+                $montoAprobadoVal = $tieneCopagoARS ? $arsMontoAprobado : floatval($aprobacionARS['MontoAprobado'] ?? 0);
+                $montoRespVal = $tieneCopagoARS ? $copagoObjetivo : floatval($aprobacionARS['MontoResponsable'] ?? 0);
+                $totalBrutoVal = $montoAprobadoVal + $montoRespVal;
+                $pctCoberVal = $tieneCopagoARS ? $arsPorcentajeCober : floatval($aprobacionARS['PorcentajeCober'] ?? 0);
+                if ($pctCoberVal <= 0 && $totalBrutoVal > 0) {
+                    $pctCoberVal = round(($montoAprobadoVal / $totalBrutoVal) * 100, 1);
+                }
+
+                $cardCodeARS = trim($aprobacionARS['CardCode_ARS'] ?? '');
+                $nombreARS = trim($aprobacionARS['NombreARS'] ?? '');
+                if (empty($nombreARS) && !empty($cardCodeARS)) {
+                    $stmtN = $pdo->prepare("SELECT CardName FROM posOCRD WHERE CardCode = ?");
+                    $stmtN->execute([$cardCodeARS]);
+                    $nombreARS = trim($stmtN->fetchColumn() ?: $cardCodeARS);
+                }
+                if (empty($nombreARS)) $nombreARS = (!empty($cardCodeARS) ? $cardCodeARS : 'Seguro ARS');
+
+                $arsInfoCobro = [
+                    'NumAprobacion' => $numAprobacion,
+                    'MontoAprobado' => $montoAprobadoVal,
+                    'PorcentajeCober' => $pctCoberVal,
+                    'MontoResponsable' => $montoRespVal,
+                    'TotalBruto' => $totalBrutoVal,
+                    'CardCode_ARS' => $cardCodeARS,
+                    'NombreARS' => $nombreARS,
+                    'TipoServicio' => trim($aprobacionARS['TipoServicio'] ?? 'CONSULTA MEDICA'),
+                    'NumAfiliado' => trim($aprobacionARS['NumAfiliado'] ?? ''),
+                    'esPorArticulos' => false
+                ];
+            }
+
+            // =========================================================================
+            // CASO 1: VENTA AL CONTADO / COPAGO ($extraDays <= 1)
+            // =========================================================================
+            // Redirigir a cobro.php SIN tocar la base de datos (ni secuencia, ni NCF, ni POSOINV, ni AprobacionARS).
+            // La inserción atómica se realiza en guardarCobro() al confirmar el pago en caja.
+            if ($extraDays <= 1) {
+                $_SESSION['datos_cobro_pendiente'] = [
+                    'total' => $docTotalFiscal,
+                    'docEntry' => 0,
+                    'pendiente' => false,
+                    'ars' => $arsInfoCobro,
+                    'factura_payload' => [
+                        'header' => [
+                            'CardCode' => $cardCode,
+                            'CardName' => $cardName,
+                            'U_FacNit' => $facNit,
+                            'U_FacNom' => $facNom,
+                            'U_FacSerie' => $facSerie,
+                            'ExtraDays' => $extraDays,
+                            'DocDate' => $docDate,
+                            'U_TNegocio' => $tNegocio,
+                            'U_terminal' => $terminal,
+                            'U_user' => $usuario,
+                            'DocTotalFiscal' => $docTotalFiscal,
+                            'DiscPrcntFiscal' => $discPrcntFiscal,
+                            'DiscSumFiscal' => $discSumFiscal,
+                            'TotalImpuestoFiscal' => $totalImpuestoFiscal
+                        ],
+                        'lineasProcesadas' => $lineasProcesadas,
+                        'articulos100' => $articulos100 ?? [],
+                        'articulosCopagoARS' => $articulosCopagoARS ?? [],
+                        'hayAprobacionesPorArticulo' => $hayAprobacionesPorArticulo,
+                        'aprobacionARS' => $aprobacionARS,
+                        'numAprobacion' => $numAprobacion,
+                        'tieneCopagoARS' => $tieneCopagoARS,
+                        'copagoObjetivo' => $copagoObjetivo ?? 0,
+                        'coberturaARS' => $coberturaARS ?? 0,
+                        'arsMontoAprobado' => $arsMontoAprobado ?? 0,
+                        'arsPorcentajeCober' => $arsPorcentajeCober ?? 0,
+                        'docTotal' => $docTotal,
+                        'totalNeto' => $totalNeto,
+                        'totalImpuesto' => $totalImpuesto
+                    ]
+                ];
+
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+
+                echo json_encode([
+                    'status' => 'success',
+                    'redirect' => 'index.php?page=cobro'
+                ]);
+                return;
+            }
+
+            // =========================================================================
+            // CASO 2: VENTA A CRÉDITO ($extraDays > 1) -> No pasa por cobro inmediato
+            // =========================================================================
+            $paso = '';
 
             // PASO 1: SECUENCIA
             $paso = "1-Secuencia";
@@ -597,7 +1382,7 @@ class FacturaController {
             $stmtSec->execute([$serieDoc]);
             $secDoc = $stmtSec->fetchColumn();
             if (!$secDoc) throw new Exception("No se generó la secuencia para " . $serieDoc);
-            $NumAtCard = substr($serieDoc . str_pad($secDoc, 7, '0', STR_PAD_LEFT), 0, 20); // F0000001 (8 caracteres)
+            $NumAtCard = substr($serieDoc . str_pad($secDoc, 7, '0', STR_PAD_LEFT), 0, 20);
 
             // PASO 2: GENERAR NCF
             $paso = "2-NCF";
@@ -616,12 +1401,11 @@ class FacturaController {
                 $stmtNCF->execute([$facSerie, $facSerie]);
                 $ncfRow = $stmtNCF->fetch(PDO::FETCH_ASSOC);
 
-                if (!$ncfRow && $extraDays <= 1) {
+                if (!$ncfRow) {
                     throw new Exception("No quedan NCF disponibles para la serie " . $facSerie);
                 }
 
                 if ($ncfRow) {
-                    // Obtener longitud configurada en serie_ncf (10 para comprobantes electrónicos e-CF)
                     $stmtLen = $pdo->prepare("SELECT longitud FROM serie_ncf WHERE UPPER(serie) = ?");
                     $stmtLen->execute([$facSerie]);
                     $lenPad = (int)$stmtLen->fetchColumn();
@@ -634,123 +1418,13 @@ class FacturaController {
                 }
             }
 
-            $whsCodeHeader = !empty($lines) ? substr(trim($lines[0]['WhsCode'] ?? ''), 0, 20) : '';
-            $docDate = !empty($docDateInput) ? $docDateInput : date('Y-m-d'); // Si viene vacía, usa la de hoy
-            
-            // DETERMINAR SI APLICA COPAGO ARS PARA FACTURA FISCAL DEL PACIENTE
-            $tieneCopagoARS = false;
-            $copagoObjetivo = 0.0;
-            $coberturaARS = 0.0;
-            $arsMontoAprobado = floatval($aprobacionARS['MontoAprobado'] ?? 0);
-            $arsPorcentajeCober = floatval($aprobacionARS['PorcentajeCober'] ?? 0);
-            $arsMontoResponsable = floatval($aprobacionARS['MontoResponsable'] ?? 0);
-
-            if (!empty($numAprobacion) && !empty($aprobacionARS) && !$esCoberturaTotal) {
-                if ($arsMontoResponsable == 0 && $arsMontoAprobado > 0) {
-                    $arsMontoResponsable = max(0, $docTotal - $arsMontoAprobado);
-                }
-                if ($arsMontoAprobado == 0 && $arsMontoResponsable > 0) {
-                    $arsMontoAprobado = max(0, $docTotal - $arsMontoResponsable);
-                }
-
-                if ($arsMontoResponsable > 0 && $docTotal > 0 && $arsMontoResponsable < $docTotal) {
-                    $tieneCopagoARS = true;
-                    $copagoObjetivo = round($arsMontoResponsable, 2);
-                    $coberturaARS = round($docTotal - $copagoObjetivo, 2);
-                    if ($arsPorcentajeCober <= 0 && $docTotal > 0) {
-                        $arsPorcentajeCober = round(($coberturaARS / $docTotal) * 100, 2);
-                    }
-                }
-            }
-
-            // PREPARAR LÍNEAS DE DETALLE (POSINV1) Y TOTALES FISCALES
-            $lineasProcesadas = [];
-            $factorCopago = ($tieneCopagoARS && $docTotal > 0) ? ($copagoObjetivo / $docTotal) : 1.0;
-            $acumuladoLineTotal = 0;
-            $acumuladoVat = 0;
-            $numLineas = count($lines);
-
-            foreach ($lines as $i => $line) {
-                $itemCode = substr(trim($line['ItemCode'] ?? ''), 0, 20);
-                $cant = floatval($line['Quantity'] ?? 0);
-                if ($cant <= 0) $cant = 1.0;
-                $precioCatalogo = floatval($line['PriceBefDi'] ?? 0);
-                if ($precioCatalogo <= 0) $precioCatalogo = floatval($line['Price'] ?? 0);
-                $descPOrig = floatval($line['DiscPrcnt'] ?? 0);
-                $impP = floatval($line['VatPrcnt'] ?? 0);
-                $whsCodeLine = substr(trim($line['WhsCode'] ?? ''), 0, 20);
-                $itemName = substr(trim($line['ItemName'] ?? ($line['Dscription'] ?? '')), 0, 100);
-                $taxCode = substr(trim($line['TaxCode'] ?? 'EXE'), 0, 20);
-
-                $brutoLinea = $cant * $precioCatalogo;
-                $descLineaOrig = $brutoLinea * ($descPOrig / 100);
-                $netoLineaOrig = $brutoLinea - $descLineaOrig;
-
-                if ($tieneCopagoARS && $docTotal > 0 && $copagoObjetivo > 0) {
-                    // Si es la última línea, ajustamos por centavos para que la suma sea exactamente el copago
-                    if ($i === $numLineas - 1) {
-                        $lineTotalAjustado = round($copagoObjetivo - $acumuladoLineTotal, 2);
-                    } else {
-                        $lineTotalAjustado = round($netoLineaOrig * $factorCopago, 2);
-                        $acumuladoLineTotal += $lineTotalAjustado;
-                    }
-
-                    // Precio unitario efectivo correspondiente al copago
-                    $precioEfectivo = ($cant > 0) ? round($lineTotalAjustado / $cant, 4) : $lineTotalAjustado;
-
-                    // Porcentaje de descuento / cobertura respecto al precio de catálogo
-                    $descPEfectivo = ($brutoLinea > 0) ? round((1 - ($lineTotalAjustado / $brutoLinea)) * 100, 2) : 0;
-                    if ($descPEfectivo < 0) $descPEfectivo = 0;
-
-                    $impuestoAjustado = round($lineTotalAjustado * ($impP / 100), 2);
-                    $acumuladoVat += $impuestoAjustado;
-
-                    $lineasProcesadas[] = [
-                        'ItemCode' => $itemCode,
-                        'Dscription' => $itemName,
-                        'Quantity' => $cant,
-                        'PriceBefDi' => $precioCatalogo,
-                        'Price' => $precioEfectivo,
-                        'DiscPrcnt' => $descPEfectivo,
-                        'LineTotal' => $lineTotalAjustado,
-                        'VatPrcnt' => $impP,
-                        'VatSum' => $impuestoAjustado,
-                        'TaxCode' => $taxCode,
-                        'WhsCode' => $whsCodeLine
-                    ];
-                } else {
-                    $impuesto = round($netoLineaOrig * ($impP / 100), 2);
-                    $lineasProcesadas[] = [
-                        'ItemCode' => $itemCode,
-                        'Dscription' => $itemName,
-                        'Quantity' => $cant,
-                        'PriceBefDi' => $precioCatalogo,
-                        'Price' => floatval($line['Price'] ?? $precioCatalogo),
-                        'DiscPrcnt' => $descPOrig,
-                        'LineTotal' => round($netoLineaOrig, 2),
-                        'VatPrcnt' => $impP,
-                        'VatSum' => $impuesto,
-                        'TaxCode' => $taxCode,
-                        'WhsCode' => $whsCodeLine
-                    ];
-                }
-            }
-
-            // Valores fiscales calculados para la cabecera POSOINV
-            $docTotalFiscal = $tieneCopagoARS ? $copagoObjetivo : $docTotal;
-            $discSumFiscal = $tieneCopagoARS ? ($descGlobal + $coberturaARS) : $descGlobal;
-            $discPrcntFiscal = ($docTotal > 0 && $tieneCopagoARS) 
-                ? round(($discSumFiscal / ($totalNeto + $totalImpuesto)) * 100, 2) 
-                : $discPrcnt;
-            $totalImpuestoFiscal = $tieneCopagoARS ? $acumuladoVat : $totalImpuesto;
-
-            // PASO 4: INSERTAR HEADER (POSOINV)
+            // PASO 4: INSERTAR HEADER (POSOINV) - DocStatus = 'O' (Abierta / A Crédito)
             $paso = "4-InsertHeader";
             $sqlH = "INSERT INTO POSOINV (DocDate, CardCode, CardName, U_FacNit, U_FacNom, NumAtCard, U_SCIASerie, U_SCIADocNum, U_FacSerie, U_NCFVence, U_FACNUM, DocTotal, DiscPrcnt, DiscSum, VatSum, ExtraDays, Filler, U_user, U_terminal, U_TNegocio, DocStatus, ObjType)
                      VALUES (CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'O', 13)";
             $stmtH = $pdo->prepare($sqlH);
             $stmtH->execute([
-                $docDate, $cardCode, $cardName, $facNit, $facNom, $NumAtCard, $sciaSerie, (int)$secDoc,
+                $docDate, $cardCode, $cardName, $facNit, $facNom, $NumAtCard, $serieDoc, (int)$secDoc,
                 $facSerie, $vNCFVence, $cNCF, $docTotalFiscal, $discPrcntFiscal, $discSumFiscal,
                 $totalImpuestoFiscal, $extraDays, $whsCodeHeader, substr(trim($usuario), 0, 15), substr(trim($terminal), 0, 20),
                 $tNegocio
@@ -772,10 +1446,9 @@ class FacturaController {
             $stmtCheckOITW = $pdo->prepare("SELECT COUNT(*) FROM posOITW WHERE ItemCode = ? AND WhsCode = ?");
             $stmtUpdOITW   = $pdo->prepare("UPDATE posOITW SET OnHand = ISNULL(OnHand, 0) - ? WHERE ItemCode = ? AND WhsCode = ?");
             $stmtInsOITW   = $pdo->prepare("INSERT INTO posOITW (ItemCode, WhsCode, OnHand) VALUES (?, ?, ?)");
-
             // Almacén fallback en caso de no venir especificado
-            $stmtFirstWhs = $pdo->query("SELECT TOP 1 WhsCode FROM posOWHS ORDER BY WhsCode ASC");
-            $fallbackWhs = $stmtFirstWhs ? $stmtFirstWhs->fetchColumn() : '01';
+            $stmtFirstWhs  = $pdo->query("SELECT TOP 1 WhsCode FROM posOWHS ORDER BY WhsCode ASC");
+            $fallbackWhs   = $stmtFirstWhs ? $stmtFirstWhs->fetchColumn() : '01';
 
             foreach ($lineasProcesadas as $i => $lProc) {
                 $itemCode = $lProc['ItemCode'];
@@ -803,14 +1476,13 @@ class FacturaController {
                     if ($itemInfo && ($itemInfo['InvntItem'] ?? '') === 'Y') {
                         // 1. Rebajar existencia en el maestro posOITM
                         $stmtUpdOITM->execute([$cant, $itemCode]);
-
                         // 2. Determinar almacén destino (línea -> almacén predeterminado -> primer almacén activo)
                         $targetWhs = !empty($whsCodeLine) ? $whsCodeLine : (!empty($itemInfo['DfltWH']) ? $itemInfo['DfltWH'] : $fallbackWhs);
 
                         if (!empty($targetWhs)) {
-                            // 3. Rebajar existencia en el almacén posOITW
                             $stmtCheckOITW->execute([$itemCode, $targetWhs]);
                             if ($stmtCheckOITW->fetchColumn() > 0) {
+                                // 3. Rebajar existencia en el almacén posOITW
                                 $stmtUpdOITW->execute([$cant, $itemCode, $targetWhs]);
                             } else {
                                 $stmtInsOITW->execute([$itemCode, $targetWhs, -$cant]);
@@ -820,22 +1492,103 @@ class FacturaController {
                 }
             }
 
-            // PASO 6: REGISTRAR / ENLAZAR APROBACIÓN ARS (Si aplica)
+            // PASO 6: REGISTRAR / ENLAZAR APROBACIÓN ARS
             $paso = "6-AprobacionARS";
-            $aprobacionARS = $datos['aprobacion_ars'] ?? null;
-            $numAprobacion = trim($header['U_NumAprobacion'] ?? ($aprobacionARS['NumAprobacion'] ?? ''));
+            $sqlARS = "INSERT INTO AprobacionARS (
+                            TipoSocio, CardCode, CardName, NumExpediente, NumAfiliado,
+                            CardCode_ARS, NumAprobacion, FechaAprobacionT, FechaAprobacionD,
+                            FechaVencimientoT, FechaVencimientoD, MontoAprobado, PorcentajeCober,
+                            MontoResponsable, DocEntry_Factura, NumFactura, FechaFacturaT,
+                            FechaFacturaD, TipoServicio, Observaciones, Status, U_user,
+                            CreateDateT, CreateDateD
+                       ) VALUES (
+                            ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?,
+                            ?, ?, ?, ?,
+                            ?, ?, ?, ?,
+                            ?, ?, ?, 'P', ?,
+                            GETDATE(), CAST(GETDATE() AS DATE)
+                       )";
+            $stmtARS = $pdo->prepare($sqlARS);
 
-            if (!empty($numAprobacion)) {
+            // Consultar datos maestros del paciente para garantizar NumExpediente y afiliación
+            $stmtPacInfo = $pdo->prepare("SELECT U_expediente, U_CadenaID, U_SubGrupo FROM posOCRD WHERE CardCode = ?");
+            $stmtPacInfo->execute([$cardCode]);
+            $pacInfoDb = $stmtPacInfo->fetch(PDO::FETCH_ASSOC);
+            $pacExpFallback = ($pacInfoDb && !empty($pacInfoDb['U_expediente'])) ? intval($pacInfoDb['U_expediente']) : null;
+            $pacAfilFallback = ($pacInfoDb && !empty($pacInfoDb['U_CadenaID'])) ? trim($pacInfoDb['U_CadenaID']) : '';
+            $pacArsFallback = ($pacInfoDb && !empty($pacInfoDb['U_SubGrupo'])) ? trim($pacInfoDb['U_SubGrupo']) : '';
+
+            if ($hayAprobacionesPorArticulo) {
+                if (!empty($articulos100)) {
+                    foreach ($articulos100 as $item100) {
+                        $ap = $item100['ap'];
+                        $arsTipoSocio = substr(trim($ap['TipoSocio'] ?? 'P'), 0, 15);
+                        $arsCardCode = substr(trim($ap['CardCode'] ?? $cardCode), 0, 100);
+                        $arsCardName = substr(trim($ap['CardName'] ?? $cardName), 0, 100);
+                        $arsNumExp = !empty($ap['NumExpediente']) ? intval($ap['NumExpediente']) : $pacExpFallback;
+                        $arsNumAfiliado = !empty($ap['NumAfiliado']) ? substr(trim($ap['NumAfiliado']), 0, 50) : substr($pacAfilFallback, 0, 50);
+                        $arsCardCodeARS = !empty($ap['CardCode_ARS']) ? substr(trim($ap['CardCode_ARS']), 0, 100) : substr($pacArsFallback, 0, 100);
+                        $numAp = substr(trim($ap['NumAprobacion'] ?? ''), 0, 50);
+
+                        $arsFechaAprobT = !empty($ap['FechaAprobacionT']) ? $ap['FechaAprobacionT'] : date('Y-m-d H:i:s');
+                        $arsFechaAprobD = !empty($ap['FechaAprobacionD']) ? $ap['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
+                        $arsFechaVencT = !empty($ap['FechaVencimientoT']) ? $ap['FechaVencimientoT'] : null;
+                        $arsFechaVencD = !empty($ap['FechaVencimientoD']) ? $ap['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
+
+                        $rawTipoServ = trim($ap['TipoServicio'] ?? $item100['Dscription']);
+                        $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
+                        $arsTipoServicio = substr($arsTipoServicio, 0, 50);
+                        $arsObservaciones = substr(trim($ap['Observaciones'] ?? ('Atención médica 100% cubierta por ARS: ' . $item100['Dscription'])), 0, 254);
+
+                        $stmtARS->execute([
+                            $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
+                            $arsCardCodeARS, $numAp, $arsFechaAprobT, $arsFechaAprobD,
+                            $arsFechaVencT, $arsFechaVencD, $item100['MontoAprobado'], 100.00,
+                            0.00, NULL, 'COBERTURA 100%', date('Y-m-d H:i:s'),
+                            date('Y-m-d'), $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                        ]);
+                    }
+                }
+
+                foreach ($articulosCopagoARS as $itemCopago) {
+                    $ap = $itemCopago['ap'];
+                    $arsTipoSocio = substr(trim($ap['TipoSocio'] ?? 'P'), 0, 15);
+                    $arsCardCode = substr(trim($ap['CardCode'] ?? $cardCode), 0, 100);
+                    $arsCardName = substr(trim($ap['CardName'] ?? $cardName), 0, 100);
+                    $arsNumExp = !empty($ap['NumExpediente']) ? intval($ap['NumExpediente']) : $pacExpFallback;
+                    $arsNumAfiliado = !empty($ap['NumAfiliado']) ? substr(trim($ap['NumAfiliado']), 0, 50) : substr($pacAfilFallback, 0, 50);
+                    $arsCardCodeARS = !empty($ap['CardCode_ARS']) ? substr(trim($ap['CardCode_ARS']), 0, 100) : substr($pacArsFallback, 0, 100);
+                    $numAp = substr(trim($ap['NumAprobacion'] ?? ''), 0, 50);
+
+                    $arsFechaAprobT = !empty($ap['FechaAprobacionT']) ? $ap['FechaAprobacionT'] : date('Y-m-d H:i:s');
+                    $arsFechaAprobD = !empty($ap['FechaAprobacionD']) ? $ap['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
+                    $arsFechaVencT = !empty($ap['FechaVencimientoT']) ? $ap['FechaVencimientoT'] : null;
+                    $arsFechaVencD = !empty($ap['FechaVencimientoD']) ? $ap['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
+
+                    $rawTipoServ = trim($ap['TipoServicio'] ?? $itemCopago['Dscription']);
+                    $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
+                    $arsTipoServicio = substr($arsTipoServicio, 0, 50);
+                    $arsObservaciones = substr(trim($ap['Observaciones'] ?? ('Copago paciente por: ' . $itemCopago['Dscription'])), 0, 254);
+
+                    $stmtARS->execute([
+                        $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
+                        $arsCardCodeARS, $numAp, $arsFechaAprobT, $arsFechaAprobD,
+                        $arsFechaVencT, $arsFechaVencD, $itemCopago['MontoAprobado'], $itemCopago['PorcentajeCober'],
+                        $itemCopago['MontoResponsable'], intval($docEntry), $NumAtCard, date('Y-m-d H:i:s'),
+                        $docDate, $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                    ]);
+                }
+            } elseif (!empty($numAprobacion)) {
                 $arsTipoSocio = substr(trim($aprobacionARS['TipoSocio'] ?? 'P'), 0, 15);
                 $arsCardCode = substr(trim($aprobacionARS['CardCode'] ?? $cardCode), 0, 100);
                 $arsCardName = substr(trim($aprobacionARS['CardName'] ?? $cardName), 0, 100);
-                $arsNumExp = !empty($aprobacionARS['NumExpediente']) ? intval($aprobacionARS['NumExpediente']) : null;
-                $arsNumAfiliado = substr(trim($aprobacionARS['NumAfiliado'] ?? ''), 0, 50);
-                $arsCardCodeARS = substr(trim($aprobacionARS['CardCode_ARS'] ?? ''), 0, 100);
+                $arsNumExp = !empty($aprobacionARS['NumExpediente']) ? intval($aprobacionARS['NumExpediente']) : $pacExpFallback;
+                $arsNumAfiliado = !empty($aprobacionARS['NumAfiliado']) ? substr(trim($aprobacionARS['NumAfiliado']), 0, 50) : substr($pacAfilFallback, 0, 50);
+                $arsCardCodeARS = !empty($aprobacionARS['CardCode_ARS']) ? substr(trim($aprobacionARS['CardCode_ARS']), 0, 100) : substr($pacArsFallback, 0, 100);
 
                 $arsFechaAprobT = !empty($aprobacionARS['FechaAprobacionT']) ? $aprobacionARS['FechaAprobacionT'] : date('Y-m-d H:i:s');
                 $arsFechaAprobD = !empty($aprobacionARS['FechaAprobacionD']) ? $aprobacionARS['FechaAprobacionD'] : substr($arsFechaAprobT, 0, 10);
-                
                 $arsFechaVencT = !empty($aprobacionARS['FechaVencimientoT']) ? $aprobacionARS['FechaVencimientoT'] : null;
                 $arsFechaVencD = !empty($aprobacionARS['FechaVencimientoD']) ? $aprobacionARS['FechaVencimientoD'] : ($arsFechaVencT ? substr($arsFechaVencT, 0, 10) : null);
 
@@ -847,31 +1600,13 @@ class FacturaController {
                 $arsTipoServicio = strtoupper(str_replace(['á','é','í','ó','ú','Á','É','Í','Ó','Ú'], ['a','e','i','o','u','A','E','I','O','U'], $rawTipoServ));
                 $arsTipoServicio = substr($arsTipoServicio, 0, 50);
                 $arsObservaciones = substr(trim($aprobacionARS['Observaciones'] ?? ''), 0, 254);
-                $fechaFacturaT = date('Y-m-d H:i:s');
-                $fechaFacturaD = $docDate;
 
-                $sqlARS = "INSERT INTO AprobacionARS (
-                                TipoSocio, CardCode, CardName, NumExpediente, NumAfiliado,
-                                CardCode_ARS, NumAprobacion, FechaAprobacionT, FechaAprobacionD,
-                                FechaVencimientoT, FechaVencimientoD, MontoAprobado, PorcentajeCober,
-                                MontoResponsable, DocEntry_Factura, NumFactura, FechaFacturaT,
-                                FechaFacturaD, TipoServicio, Observaciones, Status, U_user,
-                                CreateDateT, CreateDateD
-                           ) VALUES (
-                                ?, ?, ?, ?, ?,
-                                ?, ?, ?, ?,
-                                ?, ?, ?, ?,
-                                ?, ?, ?, ?,
-                                ?, ?, ?, 'P', ?,
-                                GETDATE(), CAST(GETDATE() AS DATE)
-                           )";
-                $stmtARS = $pdo->prepare($sqlARS);
                 $stmtARS->execute([
                     $arsTipoSocio, $arsCardCode, $arsCardName, $arsNumExp, $arsNumAfiliado,
                     $arsCardCodeARS, $numAprobacion, $arsFechaAprobT, $arsFechaAprobD,
                     $arsFechaVencT, $arsFechaVencD, $montoAprobFinal, $porcentajeFinal,
-                    $montoRespFinal, intval($docEntry), $NumAtCard, $fechaFacturaT,
-                    $fechaFacturaD, $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
+                    $montoRespFinal, intval($docEntry), $NumAtCard, date('Y-m-d H:i:s'),
+                    $docDate, $arsTipoServicio, $arsObservaciones, substr(trim($usuario), 0, 20)
                 ]);
             }
 
@@ -893,41 +1628,14 @@ class FacturaController {
                 );
             }
 
-            // PASO 8: FLUJO DE PAGO (Si es Contado, guardamos sesión para cobro)
-            $paso = "8-FlujoPago";
-            $respuestaRedireccion = '';
-            if ($extraDays <= 1) {
-                // Pasar info ARS al cobro para visualización
-                $arsInfoCobro = null;
-                if (!empty($numAprobacion) && !empty($aprobacionARS)) {
-                    $arsInfoCobro = [
-                        'NumAprobacion' => $numAprobacion,
-                        'MontoAprobado' => $tieneCopagoARS ? $arsMontoAprobado : floatval($aprobacionARS['MontoAprobado'] ?? 0),
-                        'PorcentajeCober' => $tieneCopagoARS ? $arsPorcentajeCober : floatval($aprobacionARS['PorcentajeCober'] ?? 0),
-                        'MontoResponsable' => $tieneCopagoARS ? $copagoObjetivo : floatval($aprobacionARS['MontoResponsable'] ?? 0),
-                        'CardCode_ARS' => trim($aprobacionARS['CardCode_ARS'] ?? ''),
-                        'NombreARS' => trim($aprobacionARS['NombreARS'] ?? ($aprobacionARS['CardCode_ARS'] ?? '')),
-                        'TipoServicio' => trim($aprobacionARS['TipoServicio'] ?? ''),
-                        'NumAfiliado' => trim($aprobacionARS['NumAfiliado'] ?? ''),
-                    ];
-                }
-                $_SESSION['datos_cobro_pendiente'] = [
-                    'total' => $docTotalFiscal,
-                    'docEntry' => $docEntry,
-                    'pendiente' => false,
-                    'ars' => $arsInfoCobro
-                ];
-                $respuestaRedireccion = 'index.php?page=cobro';
-            }
-
             $pdo->commit();
             
             echo json_encode([
                 'status' => 'success', 
-                'msg' => 'Factura creada: ' . $NumAtCard, 
+                'msg' => 'Factura a Crédito creada: ' . $NumAtCard, 
                 'NCF' => $cNCF, 
                 'DocEntry' => $docEntry,
-                'redirect' => $respuestaRedireccion 
+                'redirect' => ''
             ]);
 
         } catch (Exception $e) {
@@ -972,15 +1680,16 @@ class FacturaController {
                 pac.U_NIT AS PacienteNIT,
                 pac.U_expediente AS NumExpediente,
                 pac.U_SubGrupo AS SubGrupoARS,
-                -- Info ARS (si aplica)
+                -- Info ARS (si aplica, agregada para soportar múltiples aprobaciones por factura)
                 a.IdARS,
                 a.NumAprobacion,
                 a.CardCode_ARS,
                 COALESCE(ars.CardName, a.CardCode_ARS, pac_ars.CardName) AS NombreARS,
-                ISNULL(a.MontoAprobado, 0) AS CoberturaARS,
-                ISNULL(a.MontoResponsable, 0) AS CopagoPaciente,
+                ISNULL(a.CoberturaARS, 0) AS CoberturaARS,
+                ISNULL(a.CopagoPaciente, 0) AS CopagoPaciente,
                 a.TipoServicio,
-                a.Status AS StatusARS,
+                a.StatusARS,
+                a.CantidadAprobaciones,
                 -- Info Nota de Crédito (si fue afectada/anulada)
                 nc.C_DocEntry AS IdNotaCredito,
                 nc.NumAtCard AS NumNotaCredito,
@@ -997,7 +1706,19 @@ class FacturaController {
                 ecf.xml_security_code AS EcfSecurityCode
             FROM POSOINV h WITH (NOLOCK)
             LEFT JOIN posOCRD pac WITH (NOLOCK) ON h.CardCode = pac.CardCode
-            LEFT JOIN AprobacionARS a WITH (NOLOCK) ON h.C_DocEntry = a.DocEntry_Factura AND a.Status <> 'R'
+            OUTER APPLY (
+                SELECT 
+                    COUNT(a_sub.IdARS) AS CantidadAprobaciones,
+                    MIN(a_sub.IdARS) AS IdARS,
+                    STRING_AGG(a_sub.NumAprobacion, ', ') AS NumAprobacion,
+                    MAX(a_sub.CardCode_ARS) AS CardCode_ARS,
+                    SUM(a_sub.MontoAprobado) AS CoberturaARS,
+                    SUM(a_sub.MontoResponsable) AS CopagoPaciente,
+                    STRING_AGG(a_sub.TipoServicio, ' | ') AS TipoServicio,
+                    MIN(a_sub.Status) AS StatusARS
+                FROM AprobacionARS a_sub WITH (NOLOCK)
+                WHERE a_sub.DocEntry_Factura = h.C_DocEntry AND a_sub.Status <> 'R'
+            ) a
             LEFT JOIN posOCRD ars WITH (NOLOCK) ON ars.CardCode = a.CardCode_ARS
             LEFT JOIN posOCRD pac_ars WITH (NOLOCK) ON pac_ars.CardCode = pac.U_SubGrupo
             LEFT JOIN POSORIN nc WITH (NOLOCK) ON h.C_DocEntry = nc.C_DocOrigenNum AND ISNULL(nc.CANCELED, 'N') <> 'Y'
@@ -1193,7 +1914,8 @@ class FacturaController {
             ";
             $stmtARS = $pdo->prepare($sqlARS);
             $stmtARS->execute([$docEntry]);
-            $aprobacionARS = $stmtARS->fetch(PDO::FETCH_ASSOC);
+            $aprobacionesARS = $stmtARS->fetchAll(PDO::FETCH_ASSOC);
+            $aprobacionARS = !empty($aprobacionesARS) ? $aprobacionesARS[0] : null;
 
             // 4. Información de Nota de Crédito si existe
             $sqlNC = "
@@ -1220,11 +1942,12 @@ class FacturaController {
             echo json_encode([
                 'status' => 'success',
                 'data' => [
-                    'cabecera'      => $cabecera,
-                    'lineas'        => $lineas,
-                    'aprobacionARS' => $aprobacionARS ?: null,
-                    'notaCredito'   => $notaCredito ?: null,
-                    'notaDebito'    => $notaDebito ?: null
+                    'cabecera'        => $cabecera,
+                    'lineas'          => $lineas,
+                    'aprobacionARS'   => $aprobacionARS ?: null,
+                    'aprobacionesARS' => $aprobacionesARS ?: [],
+                    'notaCredito'     => $notaCredito ?: null,
+                    'notaDebito'      => $notaDebito ?: null
                 ]
             ]);
 

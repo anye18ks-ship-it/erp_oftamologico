@@ -98,7 +98,7 @@
 
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-light flex-fill py-2 fw-semibold" data-bs-dismiss="modal">Corregir</button>
-                    <button type="button" class="btn btn-primary flex-fill py-2 fw-bold" onclick="ejecutarEnvioApertura()">
+                    <button type="button" class="btn btn-primary flex-fill py-2 fw-bold" onclick="ejecutarEnvioApertura(this)">
                         <i class="bi bi-check2-circle me-1"></i> Sí, Abrir Caja
                     </button>
                 </div>
@@ -121,25 +121,38 @@ setTimeout(function() {
 
 function confirmarApertura() {
     const inputMonto = document.getElementById('txtMonto');
-    const valor = parseFloat(inputMonto.value);
+    let rawVal = inputMonto.value.trim();
+    let valor = (rawVal === '') ? 0.00 : parseFloat(rawVal);
 
-    if (isNaN(valor) || valor < 0 || inputMonto.value.trim() === '') {
+    if (isNaN(valor) || valor < 0) {
         inputMonto.classList.add('is-invalid');
         inputMonto.focus();
         return;
     }
 
+    inputMonto.value = valor.toFixed(2);
     inputMonto.classList.remove('is-invalid');
     document.getElementById('lblMontoConfirm').innerText = 'RD$ ' + valor.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     
-    const modal = new bootstrap.Modal(document.getElementById('modalConfirmApertura'));
-    modal.show();
+    try {
+        const modalEl = document.getElementById('modalConfirmApertura');
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        } else {
+            document.getElementById('formApertura').submit();
+        }
+    } catch (e) {
+        document.getElementById('formApertura').submit();
+    }
 }
 
-function ejecutarEnvioApertura() {
-    const btn = event.target;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Aperturando...';
+function ejecutarEnvioApertura(btn) {
+    if (!btn) btn = document.querySelector('#modalConfirmApertura .btn-primary');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Aperturando...';
+    }
     document.getElementById('formApertura').submit();
 }
 

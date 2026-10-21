@@ -3,7 +3,7 @@
 $serverName = "SERVIDOR\SQLEXPRESS";
 $connectionOptions = [
     "Database" => "CMS",
-    "Uid" => "cms",
+    "Uid" => "cms2",
     "PWD" => "cms2026",
     "CharacterSet" => "UTF-8"
 ];

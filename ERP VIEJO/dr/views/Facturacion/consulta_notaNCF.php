@@ -131,9 +131,11 @@
                     <span class="filter-group-label"><i class="bi bi-tag me-1"></i>Motivo:</span>
                     <select id="filtroMotivo" class="filter-input bg-transparent" style="max-width: 180px;">
                         <option value="">-- Todos los Motivos --</option>
-                        <?php foreach ($tiposNC as $t): ?>
-                            <option value="<?php echo htmlspecialchars($t['code']); ?>">
-                                <?php echo htmlspecialchars($t['code'] . ' - ' . $t['Name']); ?>
+                        <?php foreach ($tiposNC as $t): 
+                            $cVal = htmlspecialchars($t['code'] ?? $t['Code'] ?? '');
+                        ?>
+                            <option value="<?php echo $cVal; ?>">
+                                <?php echo htmlspecialchars(($cVal ? ($cVal . ' - ') : '') . $t['Name']); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -286,6 +288,9 @@
                                 <div class="text-muted mt-1" style="font-size: 0.78rem;">
                                     Fecha Factura: <span id="modalNC_FacturaFecha" class="fw-bold text-dark">--</span><br>
                                     Total Factura: <span id="modalNC_FacturaTotal" class="fw-bold text-dark font-monospace">--</span>
+                                    <div id="modalNC_ARSWrapper" class="mt-1 pt-1 border-top" style="display:none; font-size: 0.78rem;">
+                                        <i class="bi bi-shield-check text-success"></i> <span id="modalNC_ARSInfo" class="fw-bold text-success">--</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -317,7 +322,7 @@
                                     <th style="width: 12%;">Código</th>
                                     <th style="width: 38%;">Descripción del Artículo / Servicio</th>
                                     <th style="width: 12%;" class="text-center">Cant. Acreditada</th>
-                                    <th style="width: 12%;" class="text-end">Precio Unit.</th>
+                                    <th style="width: 12%;" class="text-end" title="Precio unitario efectivamente facturado y acreditado">Precio Facturado</th>
                                     <th style="width: 8%;" class="text-center">Desc.%</th>
                                     <th style="width: 8%;" class="text-end">ITBIS</th>
                                     <th style="width: 12%;" class="text-end">Total</th>
@@ -481,6 +486,13 @@ function verDetalleNC(id) {
                 let factTotal = parseFloat(c.FacturaDocTotal) || 0;
                 $('#modalNC_FacturaTotal').text('RD$ ' + factTotal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
+                if (c.NombreARS && c.NumAprobacion) {
+                    $('#modalNC_ARSInfo').html(`${c.NombreARS} &bull; Aut: <span class="font-monospace">${c.NumAprobacion}</span>`);
+                    $('#modalNC_ARSWrapper').show();
+                } else {
+                    $('#modalNC_ARSWrapper').hide();
+                }
+
                 $('#modalNC_TipoNombre').text((c.U_TipoNC ? c.U_TipoNC + ' - ' : '') + c.TipoNC_Nombre);
                 $('#modalNC_Usuario').text(c.Usuario || 'SYS');
                 $('#modalNC_Terminal').text(c.Terminal || 'POS-01');
@@ -494,7 +506,8 @@ function verDetalleNC(id) {
                 } else {
                     lineas.forEach(l => {
                         let qty = parseFloat(l.Quantity) || 0;
-                        let price = parseFloat(l.PriceBefDi) || parseFloat(l.Price) || 0;
+                        let price = parseFloat(l.Price) || 0;
+                        let priceReal = parseFloat(l.PriceBefDi) || price;
                         let disc = parseFloat(l.DiscPrcnt) || 0;
                         let vat = parseFloat(l.VatSum) || 0;
                         let tot = parseFloat(l.LineTotal) || 0;
@@ -503,7 +516,10 @@ function verDetalleNC(id) {
                             <td class="font-monospace fw-bold text-secondary">${l.ItemCode}</td>
                             <td>${l.Dscription}</td>
                             <td class="text-center font-monospace">${qty.toFixed(2)}</td>
-                            <td class="text-end font-monospace">RD$ ${price.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td class="text-end font-monospace">
+                                <div class="fw-bold text-dark">RD$ ${price.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                ${(priceReal > price + 0.01) ? `<div class="text-muted" style="font-size:0.70rem;">Precio Lista: RD$ ${priceReal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ''}
+                            </td>
                             <td class="text-center font-monospace">${disc.toFixed(0)}%</td>
                             <td class="text-end font-monospace">RD$ ${vat.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-end font-monospace fw-bold text-dark">RD$ ${tot.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>

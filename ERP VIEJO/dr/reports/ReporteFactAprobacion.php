@@ -61,6 +61,11 @@ class ReporteFactAprobacion
         // 6. Pie de página institucional
         $this->dibujarPiePagina($pdf);
 
+        // 7. Si hay aprobaciones vinculadas, generar Anexo Detallado de Reclamaciones
+        if (!empty($aprobaciones)) {
+            $this->dibujarAnexoAprobaciones($pdf, $aprobaciones, $c);
+        }
+
         return $pdf->Output('Factura_ARS_' . $ncfTitle . '.pdf', $output);
     }
 
@@ -142,13 +147,15 @@ class ReporteFactAprobacion
         // 3. Detalle individual de aprobaciones vinculadas
         $sqlAp = "SELECT 
                     a.IdARS, a.NumAprobacion, a.CardName AS Paciente, a.NumAfiliado,
+                    COALESCE(NULLIF(LTRIM(RTRIM(a.NumExpediente)), ''), pac.U_expediente, '') AS NumExpediente,
                     a.TipoServicio, a.MontoAprobado, a.NumFactura AS FacturaPaciente,
                     FORMAT(a.FechaAprobacionD, 'dd/MM/yyyy') AS FechaAprobacionFmt
                   FROM AprobacionARS a
-                  WHERE a.DocEntry_FacturaARS = ?
+                  LEFT JOIN posOCRD pac ON a.CardCode = pac.CardCode
+                  WHERE (a.DocEntry_FacturaARS = ? OR a.DocEntry_Factura = ?) AND a.Status <> 'R'
                   ORDER BY a.IdARS ASC";
         $stmtAp = $this->pdo->prepare($sqlAp);
-        $stmtAp->execute([$docEntry]);
+        $stmtAp->execute([$docEntry, $docEntry]);
         $aprobaciones = $stmtAp->fetchAll(PDO::FETCH_ASSOC);
 
         return [
@@ -581,7 +588,88 @@ class ReporteFactAprobacion
         $pdf->SetFont('helvetica', '', 7.2);
         $pdf->SetTextColor(148, 163, 184);
         $pdf->Cell(95, 4, 'ERP Oftalmológico - Comprobante Oficial de Aseguradoras', 0, 0, 'L');
-        $pdf->Cell(92.9, 4, 'Impreso el: ' . date('d/m/Y, h:i A') . '  -  Página 1 de 1', 0, 1, 'R');
+        $pdf->Cell(92.9, 4, 'Impreso el: ' . date('d/m/Y, h:i A'), 0, 1, 'R');
+    }
+
+    /**
+     * 7. Anexo de Autorizaciones y Reclamaciones ARS para Auditoría Médica
+     */
+    private function dibujarAnexoAprobaciones($pdf, $aprobaciones, $c)
+    {
+        $pdf->AddPage();
+        $this->dibujarBarraSuperior($pdf);
+
+        // Encabezado del Anexo
+        $pdf->SetY(14);
+        $pdf->SetFont('helvetica', 'B', 11);
+        $pdf->SetTextColor(112, 18, 98); // Morado institucional #701262
+        $pdf->Cell(187.9, 5, 'ANEXO DE AUTORIZACIONES - RELACIÓN DE RECLAMACIONES ARS', 0, 1, 'L');
+
+        $pdf->SetFont('helvetica', '', 7.8);
+        $pdf->SetTextColor(71, 85, 105);
+        $arsNombre = $c['U_FacNom'] ?: $c['CardName'];
+        $ncfDoc = $c['U_FACNUM'] ?: ('DOC-' . $c['C_DocEntry']);
+        $pdf->Cell(187.9, 4, "Aseguradora: $arsNombre  |  Factura Fiscal NCF: $ncfDoc  |  Fecha Emisión: " . ($c['DocDateFmt'] ?? date('d/m/Y')), 0, 1, 'L');
+        $pdf->Ln(2);
+
+        // Tabla de Autorizaciones (Ancho = 187.9 mm)
+        $wAut = 28;     // No. Autorización (28 mm)
+        $wPac = 46.9;   // Paciente (46.9 mm)
+        $wExp = 18;     // Expediente (18 mm)
+        $wAfil = 25;    // No. Afiliado (25 mm)
+        $wServ = 38;    // Servicio (38 mm)
+        $wMonto = 32;   // Monto Aprobado (32 mm)
+
+        // Cabecera
+        $pdf->SetFont('helvetica', 'B', 7.5);
+        $pdf->SetFillColor(241, 245, 249);
+        $pdf->SetTextColor(30, 41, 59);
+        $pdf->SetDrawColor(203, 213, 225);
+        $pdf->SetLineWidth(0.25);
+
+        $pdf->SetX(14);
+        $pdf->Cell($wAut, 5.5, 'NO. AUTORIZACIÓN', 1, 0, 'C', true);
+        $pdf->Cell($wPac, 5.5, 'PACIENTE', 1, 0, 'L', true);
+        $pdf->Cell($wExp, 5.5, 'EXPEDIENTE', 1, 0, 'C', true);
+        $pdf->Cell($wAfil, 5.5, 'NO. AFILIADO', 1, 0, 'C', true);
+        $pdf->Cell($wServ, 5.5, 'SERVICIO / PROCEDIMIENTO', 1, 0, 'L', true);
+        $pdf->Cell($wMonto, 5.5, 'MONTO ARS (RD$)', 1, 1, 'R', true);
+
+        // Filas
+        $pdf->SetFont('helvetica', '', 7.5);
+        $pdf->SetTextColor(15, 23, 42);
+        $fill = false;
+        $totalAprob = 0.0;
+
+        foreach ($aprobaciones as $ap) {
+            $monto = (float)($ap['MontoAprobado'] ?? 0);
+            $totalAprob += $monto;
+            $expStr = !empty($ap['NumExpediente']) ? ('EXP-' . $ap['NumExpediente']) : 'S/E';
+
+            $pdf->SetFillColor(248, 250, 252);
+            $pdf->SetX(14);
+            $pdf->Cell($wAut, 5, $ap['NumAprobacion'], 'LR', 0, 'C', $fill);
+            $pdf->Cell($wPac, 5, mb_substr($ap['Paciente'] ?? '', 0, 28, 'UTF-8'), 'LR', 0, 'L', $fill);
+            $pdf->Cell($wExp, 5, $expStr, 'LR', 0, 'C', $fill);
+            $pdf->Cell($wAfil, 5, mb_substr($ap['NumAfiliado'] ?? '', 0, 16, 'UTF-8'), 'LR', 0, 'C', $fill);
+            $pdf->Cell($wServ, 5, mb_substr($ap['TipoServicio'] ?? '', 0, 24, 'UTF-8'), 'LR', 0, 'L', $fill);
+            $pdf->Cell($wMonto, 5, number_format($monto, 2) . ' ', 'LR', 1, 'R', $fill);
+
+            $fill = !$fill;
+        }
+
+        // Fila de Cierre y Total
+        $pdf->SetX(14);
+        $pdf->Cell(187.9, 0.1, '', 'T', 1, 'C');
+
+        $pdf->SetX(14);
+        $pdf->SetFont('helvetica', 'B', 8);
+        $pdf->SetFillColor(241, 245, 249);
+        $pdf->Cell($wAut + $wPac + $wExp + $wAfil + $wServ, 6, 'TOTAL AUTORIZADO EN ANEXO (RD$):', 1, 0, 'R', true);
+        $pdf->SetTextColor(21, 128, 61);
+        $pdf->Cell($wMonto, 6, number_format($totalAprob, 2) . ' ', 1, 1, 'R', true);
+
+        $this->dibujarPiePagina($pdf);
     }
 
     /**

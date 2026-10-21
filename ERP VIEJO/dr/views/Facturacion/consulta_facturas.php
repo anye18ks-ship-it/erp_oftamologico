@@ -87,6 +87,7 @@
                     <select id="filtroEstado" class="filter-select-input" onchange="filtrarFacturas()">
                         <option value="">Todos</option>
                         <option value="VIGENTE">Vigente</option>
+                        <option value="AFECTADA">NC Parcial</option>
                         <option value="MODIFICADA">Modificada (ND)</option>
                         <option value="ANULADA">Anulada</option>
                     </select>
@@ -142,7 +143,7 @@
                         <th style="width: 22%;">Paciente / Cliente</th>
                         <th style="width: 13%;">Tipo / ARS</th>
                         <th style="width: 9%;">Condición</th>
-                        <th style="width: 11%;" class="text-end">Total Factura</th>
+                        <th style="width: 12%;" class="text-end" title="Total neto facturado al paciente / Copago">Total Facturado</th>
                         <th style="width: 10%;" class="text-center">Estado</th>
                         <th style="width: 10%;" class="text-center">Acciones</th>
                     </tr>
@@ -154,12 +155,17 @@
                         $fechaIso = !empty($f['DocDate']) ? substr($f['DocDate'], 0, 10) : '';
                         $ncf = !empty($f['U_FACNUM']) ? trim($f['U_FACNUM']) : trim($f['NumAtCard'] ?? '');
                         $serie = strtoupper(trim($f['U_FacSerie'] ?? substr($ncf, 0, 3)));
-                        $esAnulada = ($f['CANCELED'] === 'Y' || !empty($f['IdNotaCredito']));
+                        
+                        $montoNC = (float)($f['MontoNotaCredito'] ?? 0);
+                        $docTotalVal = (float)($f['DocTotal'] ?? 0);
+                        $esAnuladaTotal = ($f['CANCELED'] === 'Y' || (!empty($f['IdNotaCredito']) && $montoNC >= $docTotalVal - 0.01));
+                        $esAfectadaNC = (!$esAnuladaTotal && !empty($f['IdNotaCredito']) && $montoNC > 0);
+                        $esAnulada = $esAnuladaTotal;
                         $tieneND = (!empty($f['IdNotaDebito']) || !empty($f['NCF_NotaDebito']));
                         $tieneARS = (!empty($f['NumAprobacion']) || !empty($f['CardCode_ARS']) || !empty($f['SubGrupoARS']));
                         $esCredito = ((int)($f['ExtraDays'] ?? 0) > 1);
                         
-                        $estadoFiltro = $esAnulada ? 'ANULADA' : ($tieneND ? 'MODIFICADA' : 'VIGENTE');
+                        $estadoFiltro = $esAnuladaTotal ? 'ANULADA' : ($esAfectadaNC ? 'AFECTADA' : ($tieneND ? 'MODIFICADA' : 'VIGENTE'));
 
                         // Clase de badge de serie fiscal
                         $badgeSerieClass = 'badge-serie-other';
@@ -249,24 +255,37 @@
                         <td class="text-end">
                             <?php 
                             $copagoVal = (float)($f['CopagoPaciente'] ?? 0);
-                            $docTotalVal = (float)($f['DocTotal'] ?? 0);
-                            $montoMostrar = ($tieneARS && $copagoVal > 0) ? $copagoVal : $docTotalVal;
                             ?>
-                            <span class="font-monospace fw-bold <?php echo $esAnulada ? 'text-decoration-line-through text-muted' : 'text-dark'; ?>">
-                                RD$ <?php echo number_format($montoMostrar, 2); ?>
+                            <span class="font-monospace fw-bold <?php echo $esAnuladaTotal ? 'text-decoration-line-through text-muted' : 'text-dark'; ?>">
+                                RD$ <?php echo number_format($docTotalVal, 2); ?>
                             </span>
-                            <?php if ($tieneARS && $copagoVal > 0 && abs($copagoVal - $docTotalVal) > 0.01): ?>
-                                <small class="d-block text-muted font-monospace" style="font-size: 0.70rem;" title="Total Procedimiento: RD$ <?php echo number_format($docTotalVal, 2); ?>">
-                                    Copago
+                            <?php if ($esAfectadaNC): ?>
+                                <small class="d-block font-monospace fw-semibold" style="font-size: 0.70rem; color: #b45309;" title="Afectada con Nota de Crédito parcial">
+                                    <i class="bi bi-arrow-return-left me-1"></i>NC: -RD$ <?php echo number_format($montoNC, 2); ?>
                                 </small>
+                            <?php endif; ?>
+                            <?php if ($tieneARS): ?>
+                                <?php if ((float)($f['CoberturaARS'] ?? 0) > 0): ?>
+                                    <small class="d-block font-monospace fw-semibold" style="font-size: 0.70rem; color: #7e22ce;" title="Monto cubierto por ARS">
+                                        <i class="bi bi-shield-check me-1"></i>ARS: RD$ <?php echo number_format((float)$f['CoberturaARS'], 2); ?>
+                                    </small>
+                                <?php elseif ($copagoVal > 0): ?>
+                                    <small class="d-block text-muted font-monospace" style="font-size: 0.70rem;">
+                                        <?php echo (abs($copagoVal - $docTotalVal) > 0.01) ? ('Copago: RD$ ' . number_format($copagoVal, 2)) : 'Copago ARS'; ?>
+                                    </small>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </td>
 
                         <!-- 8. Estado -->
                         <td class="text-center">
-                            <?php if ($esAnulada): ?>
-                                <span class="badge-estado-fac badge-fac-anulada" title="Anulada / Afectada con Nota de Crédito <?php echo htmlspecialchars($f['NumNotaCredito'] ?? ''); ?>">
+                            <?php if ($esAnuladaTotal): ?>
+                                <span class="badge-estado-fac badge-fac-anulada" title="Anulada totalmente con Nota de Crédito <?php echo htmlspecialchars($f['NumNotaCredito'] ?? ''); ?>">
                                     <i class="bi bi-x-circle-fill"></i> Anulada
+                                </span>
+                            <?php elseif ($esAfectadaNC): ?>
+                                <span class="badge-estado-fac badge-fac-modificada" style="background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;" title="Afectada con Nota de Crédito parcial <?php echo htmlspecialchars($f['NumNotaCredito'] ?? ''); ?> (RD$ <?php echo number_format($montoNC, 2); ?>)">
+                                    <i class="bi bi-arrow-return-left"></i> NC Parcial
                                 </span>
                             <?php elseif ($tieneND): ?>
                                 <span class="badge-estado-fac badge-fac-modificada" title="Modificada con Nota de Débito <?php echo htmlspecialchars($f['NCF_NotaDebito'] ?? ''); ?> (RD$ <?php echo number_format((float)($f['MontoNotaDebito'] ?? 0), 2); ?>)">
@@ -439,14 +458,15 @@
                         <table class="table table-hover align-middle mb-0 modal-table-lines">
                             <thead>
                                 <tr>
-                                    <th style="width: 5%;">#</th>
-                                    <th style="width: 14%;">Código</th>
-                                    <th style="width: 36%;">Descripción del Artículo / Servicio</th>
-                                    <th style="width: 8%;" class="text-center">Cant.</th>
-                                    <th style="width: 12%;" class="text-end">Precio Unit.</th>
-                                    <th style="width: 9%;" class="text-center">Desc %</th>
-                                    <th style="width: 8%;" class="text-center">ITBIS</th>
-                                    <th style="width: 13%;" class="text-end">Total Línea</th>
+                                    <th style="width: 4%;">#</th>
+                                    <th style="width: 10%;">Código</th>
+                                    <th style="width: 27%;">Descripción del Artículo / Servicio</th>
+                                    <th style="width: 6%;" class="text-center">Cant.</th>
+                                    <th style="width: 11%;" class="text-end" title="Precio de lista oficial sin deducción de seguro">Precio Lista</th>
+                                    <th style="width: 13%;" class="text-center" title="Monto cubierto por la Aseguradora">Cobertura ARS</th>
+                                    <th style="width: 11%;" class="text-end" title="Precio unitario a pagar por el paciente">Precio Copago</th>
+                                    <th style="width: 6%;" class="text-center">ITBIS</th>
+                                    <th style="width: 12%;" class="text-end" title="Total neto facturado al paciente">Total Facturado</th>
                                 </tr>
                             </thead>
                             <tbody id="modalFac_LineasBody">
@@ -460,11 +480,15 @@
                         <div class="col-md-5">
                             <div class="modal-totals-card">
                                 <div class="modal-total-row">
-                                    <span class="text-muted fw-bold">Subtotal Bruto:</span>
+                                    <span class="text-muted fw-bold">Subtotal de Lista:</span>
                                     <span id="modalFac_Subtotal" class="font-monospace fw-bold text-dark">RD$ 0.00</span>
                                 </div>
-                                <div class="modal-total-row">
-                                    <span class="text-muted fw-bold">Descuentos:</span>
+                                <div class="modal-total-row text-success" id="rowModalCoberturaARS" style="display: none;">
+                                    <span class="fw-bold"><i class="bi bi-shield-check me-1"></i>Cobertura Seguro (ARS):</span>
+                                    <span id="modalFac_CoberturaARS" class="font-monospace fw-bold text-success">- RD$ 0.00</span>
+                                </div>
+                                <div class="modal-total-row" id="rowModalDescuento" style="display: none;">
+                                    <span class="text-muted fw-bold">Descuento Comercial:</span>
                                     <span id="modalFac_Descuento" class="font-monospace fw-bold text-danger">RD$ 0.00</span>
                                 </div>
                                 <div class="modal-total-row">
@@ -472,18 +496,18 @@
                                     <span id="modalFac_ITBIS" class="font-monospace fw-bold text-dark">RD$ 0.00</span>
                                 </div>
                                 <div class="modal-total-grand">
-                                    <span id="modalFac_LblTotalGeneral">TOTAL FACTURA:</span>
+                                    <span id="modalFac_LblTotalGeneral">TOTAL FACTURADO:</span>
                                     <span id="modalFac_TotalGeneral" class="font-monospace text-primary">RD$ 0.00</span>
                                 </div>
                                 
                                 <!-- Desglose Responsable Si aplica ARS -->
                                 <div id="modalFac_DesgloseARS" style="display: none;" class="mt-2 pt-2 border-top">
                                     <div class="modal-total-row text-purple">
-                                        <span class="fw-bold">Cobertura ARS:</span>
+                                        <span class="fw-bold">Total Cubierto por ARS:</span>
                                         <span id="modalFac_TotalARS" class="font-monospace fw-bold">RD$ 0.00</span>
                                     </div>
                                     <div class="modal-total-row text-success">
-                                        <span class="fw-bold">Copago Paciente:</span>
+                                        <span class="fw-bold">Copago Total Paciente:</span>
                                         <span id="modalFac_TotalCopago" class="font-monospace fw-bold">RD$ 0.00</span>
                                     </div>
                                 </div>
@@ -906,12 +930,16 @@ function verDetalleFactura(docEntry) {
                 let esCredito = parseInt(h.ExtraDays || 0) > 1;
                 $('#modalFac_Condicion').html(esCredito ? '<span class="badge-condicion badge-credito">Crédito (' + h.ExtraDays + ' días)</span>' : '<span class="badge-condicion badge-contado">Contado</span>');
                 
-                $('#modalFac_Usuario').text(h.U_user || 'Cajero');
-                
-                let esAnulada = (h.CANCELED === 'Y' || nc != null);
+                let docTotal = parseFloat(h.DocTotal || 0);
+                let ncTotal = nc ? parseFloat(nc.DocTotal || 0) : 0;
+                let esTotalmenteAnulada = (h.CANCELED === 'Y' || (nc != null && ncTotal >= docTotal - 0.01));
+                let esAfectadaParcial = (!esTotalmenteAnulada && nc != null && ncTotal > 0);
                 let tieneND = (nd != null);
-                if (esAnulada) {
+
+                if (esTotalmenteAnulada) {
                     $('#modalFac_Estado').html('<span class="badge-estado-fac badge-fac-anulada">ANULADA</span>');
+                } else if (esAfectadaParcial) {
+                    $('#modalFac_Estado').html('<span class="badge-estado-fac badge-fac-modificada" style="background-color:#fef3c7; color:#92400e; border:1px solid #fde68a;">NC PARCIAL</span>');
                 } else if (tieneND) {
                     $('#modalFac_Estado').html('<span class="badge-estado-fac badge-fac-modificada">MODIFICADA (ND)</span>');
                 } else {
@@ -942,56 +970,85 @@ function verDetalleFactura(docEntry) {
                 }
 
                 // 3. Banner ARS
-                if (ars) {
-                    $('#modalBannerARS').show();
-                    $('#modalARS_Nombre').text(ars.NombreARS || ars.CardCode_ARS || 'Aseguradora');
-                    $('#modalARS_Aut').text(ars.NumAprobacion || 'S/N');
-                    $('#modalARS_Afiliado').text(ars.NumAfiliado || '-');
-                    $('#modalARS_Servicio').text(ars.TipoServicio || 'CONSULTA MEDICA');
-                    
-                    let covMonto = parseFloat(ars.MontoAprobado || 0);
-                    $('#modalARS_CoberturaBadge').text('Cobertura ARS: RD$ ' + covMonto.toLocaleString('en-US', {minimumFractionDigits: 2}));
+                let aprobaciones = res.data.aprobacionesARS || (ars ? [ars] : []);
+                let covTotal = 0;
+                let copagoTotal = 0;
 
+                if (aprobaciones.length > 0) {
+                    $('#modalBannerARS').show();
+                    let primerArs = aprobaciones[0];
+                    $('#modalARS_Nombre').text(primerArs.NombreARS || primerArs.CardCode_ARS || 'Aseguradora');
+                    $('#modalARS_Afiliado').text(primerArs.NumAfiliado || '-');
+
+                    if (aprobaciones.length > 1) {
+                        let numsAut = aprobaciones.map(a => a.NumAprobacion).filter(Boolean).join(', ');
+                        let tiposServ = aprobaciones.map(a => a.TipoServicio).filter(Boolean).join(' | ');
+                        $('#modalARS_Aut').text(numsAut || 'S/N');
+                        $('#modalARS_Servicio').text(tiposServ || 'Por Artículos');
+                    } else {
+                        $('#modalARS_Aut').text(primerArs.NumAprobacion || 'S/N');
+                        $('#modalARS_Servicio').text(primerArs.TipoServicio || 'CONSULTA MEDICA');
+                    }
+
+                    aprobaciones.forEach(a => {
+                        covTotal += parseFloat(a.MontoAprobado || 0);
+                        copagoTotal += parseFloat(a.MontoResponsable || 0);
+                    });
+
+                    $('#modalARS_CoberturaBadge').text('Cobertura ARS: RD$ ' + covTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
                     $('#modalFac_DesgloseARS').show();
-                    $('#modalFac_TotalARS').text('RD$ ' + covMonto.toLocaleString('en-US', {minimumFractionDigits: 2}));
-                    $('#modalFac_TotalCopago').text('RD$ ' + parseFloat(ars.MontoResponsable || 0).toLocaleString('en-US', {minimumFractionDigits: 2}));
+                    $('#modalFac_TotalARS').text('RD$ ' + covTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
+                    $('#modalFac_TotalCopago').text('RD$ ' + copagoTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
                 } else {
                     $('#modalBannerARS').hide();
                     $('#modalFac_DesgloseARS').hide();
                 }
 
-                // 4. Líneas de Factura
+                // 4. Líneas de Factura (Desglose de Precio Real, Cobertura ARS y Copago)
                 let tbody = $('#modalFac_LineasBody');
                 tbody.empty();
 
-                let subtotalBruto = 0;
+                let subtotalRealBruto = 0;
+                let totalCobARS = 0;
                 let descTotal = 0;
 
                 if (lines.length > 0) {
                     lines.forEach((l, idx) => {
                         let cant = parseFloat(l.Quantity || 1);
-                        let precio = parseFloat(l.PriceBefDi || l.Price || 0);
+                        let precioReal = parseFloat(l.PriceBefDi || l.Price || 0);
+                        let precioCopago = parseFloat(l.Price || 0);
                         let descP = parseFloat(l.DiscPrcnt || 0);
                         let impP = parseFloat(l.VatPrcnt || 0);
                         let totalLin = parseFloat(l.LineTotal || 0);
 
-                        let brutLin = cant * precio;
-                        let descLin = brutLin * (descP / 100);
+                        let brutLinReal = cant * precioReal;
+                        let descLin = (cant * precioCopago) * (descP / 100);
 
-                        subtotalBruto += brutLin;
+                        subtotalRealBruto += brutLinReal;
                         descTotal += descLin;
+
+                        // Cobertura ARS de esta línea específica
+                        let coberturaHtml = '<span class="text-muted font-monospace">-</span>';
+                        if (precioReal > (precioCopago + 0.001)) {
+                            let diffUnit = precioReal - precioCopago;
+                            let cobLinea = diffUnit * cant;
+                            totalCobARS += cobLinea;
+                            let pctCob = Math.round((diffUnit / precioReal) * 100);
+                            coberturaHtml = `<span class="badge" style="background: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe; font-size: 0.78rem; font-weight: 700; font-family: monospace;" title="Diferencia cubierta por seguro: RD$ ${cobLinea.toFixed(2)}">RD$ ${cobLinea.toLocaleString('en-US', {minimumFractionDigits: 2})} (${pctCob}%)</span>`;
+                        }
 
                         tbody.append(`
                             <tr>
-                                <td class="text-muted font-monospace">${idx + 1}</td>
+                                <td class="text-muted font-monospace text-center">${idx + 1}</td>
                                 <td class="font-monospace fw-bold text-dark">${l.ItemCode || '-'}</td>
                                 <td>
                                     <div class="fw-semibold text-dark">${l.Dscription || '-'}</div>
                                     <small class="text-muted">${l.GrupoArticulo || ''}</small>
                                 </td>
-                                <td class="text-center font-monospace">${cant}</td>
-                                <td class="text-end font-monospace">RD$ ${precio.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                                <td class="text-center font-monospace">${descP > 0 ? descP + '%' : '-'}</td>
+                                <td class="text-center font-monospace fw-semibold">${cant}</td>
+                                <td class="text-end font-monospace fw-bold text-secondary">RD$ ${precioReal.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                                <td class="text-center">${coberturaHtml}</td>
+                                <td class="text-end font-monospace fw-bold text-primary">RD$ ${precioCopago.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                                 <td class="text-center font-monospace">${impP > 0 ? impP + '%' : 'Exento'}</td>
                                 <td class="text-end font-monospace fw-bold text-dark">RD$ ${totalLin.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                             </tr>
@@ -1000,26 +1057,41 @@ function verDetalleFactura(docEntry) {
                 } else {
                     tbody.append(`
                         <tr>
-                            <td colspan="8" class="text-center py-3 text-muted">No se encontraron líneas registradas para esta factura.</td>
+                            <td colspan="9" class="text-center py-4 text-muted">No se encontraron líneas registradas para esta factura.</td>
                         </tr>
                     `);
                 }
 
                 // 5. Totales
                 let itbisTotal = parseFloat(h.VatSum || 0);
-                let docTotal = parseFloat(h.DocTotal || 0);
-                let copagoARS = (ars && parseFloat(ars.MontoResponsable || 0) > 0) ? parseFloat(ars.MontoResponsable) : 0;
-                let montoMostrarFac = (copagoARS > 0 && Math.abs(docTotal - copagoARS) > 0.01) ? copagoARS : docTotal;
+                docTotal = parseFloat(h.DocTotal || 0);
+                let cobFinalMostrar = (totalCobARS > 0) ? totalCobARS : covTotal;
 
-                $('#modalFac_Subtotal').text('RD$ ' + subtotalBruto.toLocaleString('en-US', {minimumFractionDigits: 2}));
-                $('#modalFac_Descuento').text('RD$ ' + descTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
-                $('#modalFac_ITBIS').text('RD$ ' + itbisTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
-                $('#modalFac_TotalGeneral').text('RD$ ' + montoMostrarFac.toLocaleString('en-US', {minimumFractionDigits: 2}));
+                $('#modalFac_Subtotal').text('RD$ ' + subtotalRealBruto.toLocaleString('en-US', {minimumFractionDigits: 2}));
 
-                if (copagoARS > 0) {
-                    $('#modalFac_LblTotalGeneral').html('<i class="bi bi-shield-check me-1 text-success"></i>TOTAL FACTURADO (COPAGO):');
+                if (cobFinalMostrar > 0.001) {
+                    $('#rowModalCoberturaARS').show();
+                    $('#modalFac_CoberturaARS').text('- RD$ ' + cobFinalMostrar.toLocaleString('en-US', {minimumFractionDigits: 2}));
                 } else {
-                    $('#modalFac_LblTotalGeneral').text('TOTAL FACTURA:');
+                    $('#rowModalCoberturaARS').hide();
+                }
+
+                if (descTotal > 0.001) {
+                    $('#rowModalDescuento').show();
+                    $('#modalFac_Descuento').text('- RD$ ' + descTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
+                } else {
+                    $('#rowModalDescuento').hide();
+                }
+
+                $('#modalFac_ITBIS').text('RD$ ' + itbisTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
+                $('#modalFac_TotalGeneral').text('RD$ ' + docTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
+                $('#modalFac_LblTotalGeneral').text('TOTAL FACTURADO (COPAGO):');
+
+                // Si hay desglose de ARS en el footer
+                if (cobFinalMostrar > 0.001) {
+                    $('#modalFac_DesgloseARS').show();
+                    $('#modalFac_TotalARS').text('RD$ ' + cobFinalMostrar.toLocaleString('en-US', {minimumFractionDigits: 2}));
+                    $('#modalFac_TotalCopago').text('RD$ ' + docTotal.toLocaleString('en-US', {minimumFractionDigits: 2}));
                 }
 
                 // 6. Configurar enlace de impresión de Factura Sellada

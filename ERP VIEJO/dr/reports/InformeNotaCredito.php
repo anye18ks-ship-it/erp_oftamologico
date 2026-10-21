@@ -177,11 +177,30 @@ class InformeNotaCredito
                     ISNULL(nc.CANCELED, 'N') AS CANCELED,
                     inv.DocTotal AS FacturaDocTotal,
                     inv.NumAtCard AS FacturaNCF,
-                    FORMAT(inv.DocDate, 'dd/MM/yyyy') AS FacturaDocDateFmt
+                    FORMAT(inv.DocDate, 'dd/MM/yyyy') AS FacturaDocDateFmt,
+                    -- Datos de Aprobación ARS si la factura origen tuvo seguro
+                    ars_info.NombreARS,
+                    ars_info.NumAprobacion,
+                    ars_info.NumExpediente,
+                    ars_info.MontoARS,
+                    ars_info.TotalCopago
                  FROM POSORIN nc
                  LEFT JOIN TIPOS_ANULACION ta ON nc.U_TipoNC = ta.code
                  LEFT JOIN POSOINV inv ON nc.C_DocOrigenNum = inv.C_DocEntry
                  LEFT JOIN usuario u ON (nc.U_user = u.usuario OR nc.U_user = CAST(u.id_usuario AS VARCHAR(20)) OR nc.U_user = u.nombre)
+                 OUTER APPLY (
+                     SELECT 
+                         MAX(COALESCE(ars_soc.CardName, a_inner.CardCode_ARS)) AS NombreARS,
+                         STRING_AGG(a_inner.NumAprobacion, ', ') AS NumAprobacion,
+                         MAX(COALESCE(NULLIF(LTRIM(RTRIM(a_inner.NumExpediente)), ''), pac.U_expediente, '')) AS NumExpediente,
+                         SUM(ISNULL(a_inner.MontoAprobado, 0)) AS MontoARS,
+                         SUM(ISNULL(a_inner.MontoResponsable, 0)) AS TotalCopago
+                     FROM AprobacionARS a_inner WITH (NOLOCK)
+                     LEFT JOIN posOCRD pac WITH (NOLOCK) ON a_inner.CardCode = pac.CardCode
+                     LEFT JOIN posOCRD ars_soc WITH (NOLOCK) ON a_inner.CardCode_ARS = ars_soc.CardCode
+                     WHERE a_inner.DocEntry_Factura = inv.C_DocEntry AND a_inner.Status <> 'R'
+                     GROUP BY a_inner.DocEntry_Factura
+                 ) ars_info
                  WHERE nc.C_DocEntry = ?";
 
         $stmtH = $this->pdo->prepare($sqlH);
@@ -292,11 +311,14 @@ class InformeNotaCredito
     {
         $y = $pdf->GetY();
 
+        $hasARS = !empty($c['NombreARS']) && !empty($c['NumAprobacion']);
+        $hBox = $hasARS ? 30.5 : 26;
+
         // Cuadro 1: Datos del Paciente / Cliente (Izquierda)
         $pdf->SetFillColor(255, 255, 255);
         $pdf->SetDrawColor(226, 232, 240);
         $pdf->SetLineWidth(0.25);
-        $pdf->RoundedRect(14, $y, 90, 26, 2, '1111', 'DF');
+        $pdf->RoundedRect(14, $y, 90, $hBox, 2, '1111', 'DF');
 
         $pdf->SetXY(16, $y + 1.5);
         $pdf->SetFont('helvetica', 'B', 8);
@@ -335,8 +357,18 @@ class InformeNotaCredito
         $pdf->SetTextColor(15, 23, 42);
         $pdf->Cell(66, 4, mb_substr($c['Address'] ?: 'SANTO DOMINGO, REP. DOM.', 0, 45, 'UTF-8'), 0, 1, 'L');
 
+        if ($hasARS && !empty($c['NumExpediente'])) {
+            $pdf->SetXY(16, $y + 24.5);
+            $pdf->SetFont('helvetica', 'B', 7.5);
+            $pdf->SetTextColor(71, 85, 105);
+            $pdf->Cell(20, 4, 'EXPEDIENTE:', 0, 0, 'L');
+            $pdf->SetFont('helvetica', 'B', 7.8);
+            $pdf->SetTextColor(15, 23, 42);
+            $pdf->Cell(66, 4, 'EXP-' . $c['NumExpediente'], 0, 1, 'L');
+        }
+
         // Cuadro 2: Datos de Modificación Fiscal (Factura Origen) (Derecha)
-        $pdf->RoundedRect(108, $y, 92, 26, 2, '1111', 'DF');
+        $pdf->RoundedRect(108, $y, 92, $hBox, 2, '1111', 'DF');
 
         $pdf->SetXY(110, $y + 1.5);
         $pdf->SetFont('helvetica', 'B', 8);
@@ -377,7 +409,16 @@ class InformeNotaCredito
         $pdf->SetTextColor(15, 23, 42);
         $pdf->Cell(54, 4, mb_substr($c['Motivo'] ?: 'EMISIÓN DE NOTA DE CRÉDITO', 0, 38, 'UTF-8'), 0, 1, 'L');
 
-        $pdf->SetY($y + 29);
+        if ($hasARS) {
+            $pdf->SetXY(110, $y + 24.5);
+            $pdf->SetFont('helvetica', 'B', 7);
+            $pdf->SetTextColor(21, 128, 61);
+            $pdf->Cell(34, 4, 'COBERTURA ARS:', 0, 0, 'L');
+            $pdf->SetFont('helvetica', 'B', 7.2);
+            $pdf->Cell(54, 4, mb_substr($c['NombreARS'] . ' (Aut: ' . $c['NumAprobacion'] . ')', 0, 38, 'UTF-8'), 0, 1, 'L');
+        }
+
+        $pdf->SetY($y + $hBox + 3);
     }
 
     /**
@@ -417,13 +458,19 @@ class InformeNotaCredito
         foreach ($lineas as $l) {
             $pdf->SetFillColor(248, 250, 252);
             $qty = (float)($l['Quantity'] ?? 1);
-            $precio = (float)($l['PriceBefDi'] ?? $l['Price'] ?? 0);
+            $precio = (float)($l['Price'] ?? 0);
+            $precioLista = (float)($l['PriceBefDi'] ?? $precio);
             $disc = (float)($l['DiscPrcnt'] ?? 0);
             $vat = (float)($l['VatSum'] ?? 0);
             $totalLinea = (float)($l['LineTotal'] ?? 0);
 
+            $desc = mb_substr($l['Dscription'], 0, 42, 'UTF-8');
+            if ($precioLista > $precio + 0.01) {
+                $desc .= ' (Lista: ' . number_format($precioLista, 0) . ')';
+            }
+
             $pdf->Cell($wCod, 5, $l['ItemCode'], 'LR', 0, 'C', $fill);
-            $pdf->Cell($wDesc, 5, mb_substr($l['Dscription'], 0, 52, 'UTF-8'), 'LR', 0, 'L', $fill);
+            $pdf->Cell($wDesc, 5, $desc, 'LR', 0, 'L', $fill);
             $pdf->Cell($wCant, 5, number_format($qty, 2), 'LR', 0, 'C', $fill);
             $pdf->Cell($wPrec, 5, number_format($precio, 2), 'LR', 0, 'R', $fill);
             $pdf->Cell($wDescP, 5, number_format($disc, 0) . '%', 'LR', 0, 'C', $fill);

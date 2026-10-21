@@ -10,7 +10,7 @@ require_once 'phpqrcode/qrlib.php';
 $serverName = "SERVIDOR\SQLEXPRESS";
 $connectionOptions = [
     "Database" => "CMS",
-    "Uid" => "CMS",
+    "Uid" => "cms2",
     "PWD" => "cms2026",
     "CharacterSet" => "UTF-8"
 ];
@@ -314,7 +314,7 @@ body {
                 
 				<th width="19%" class="num">ITBIS</th>
                 <th width="18%" class="num">&nbsp;</th>
-				<th width="37%" class="num">Imprte</th>
+				<th width="37%" class="num">Importe</th>
             </tr>
         </thead>
         <tbody>

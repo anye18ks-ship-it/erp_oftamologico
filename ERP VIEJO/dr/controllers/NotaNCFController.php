@@ -14,7 +14,7 @@ class NotaNCFController {
         $pdo = $database->getConnection();
 
         // Tipos de NC para el combo (Devolución / Descuento)
-        $stmtTipos = $pdo->query("SELECT code, Name FROM TIPOS_ANULACION");
+        $stmtTipos = $pdo->query("SELECT Code as code, Code, Name FROM TIPOS_ANULACION ORDER BY Name ASC");
         $tiposNC = $stmtTipos->fetchAll(PDO::FETCH_ASSOC);
 
         // Series NCF activas (para referencia)
@@ -257,26 +257,9 @@ class NotaNCFController {
                 throw new Exception('Debe incluir al menos un artículo en la Nota de Crédito.');
             }
 
-            // Serie fijada o determinada automáticamente según el NCF de la factura
-            $serie = strtoupper(trim($h['U_FacSerie'] ?? ''));
-            if (empty($serie)) {
-                $ncfOrigDetect = $factura['U_FACNUM'] ?? $factura['NumAtCard'] ?? '';
-                $serie = (stripos($ncfOrigDetect, 'E') === 0) ? 'E34' : 'B04';
-            }
-
-            $tipoNC = trim($h['U_TipoNC'] ?? '');
-            if (empty($tipoNC)) {
-                throw new Exception('El tipo de Nota de Crédito es obligatorio.');
-            }
-
-            $motivo = trim($h['Comments'] ?? '');
-            if (empty($motivo)) {
-                throw new Exception('El motivo de la Nota de Crédito es obligatorio.');
-            }
-
             // ---------- Obtener factura origen ----------
             $sqlFac = "SELECT C_DocEntry, DocEntry, DocNum, NumAtCard, CardCode, CardName,
-                               Address, DocTotal, VatSum, DiscSum,
+                               Address, DocTotal, PaidToDate, VatSum, DiscSum,
                                U_FACNUM, U_FacSerie, U_FacNit, U_FacNom, U_TNegocio,
                                CANCELED, DocStatus
                         FROM POSOINV WHERE C_DocEntry = ?";
@@ -291,10 +274,21 @@ class NotaNCFController {
                 throw new Exception('La factura origen está cancelada.');
             }
 
-            // Si la serie no fue forzada, recalcular según el NCF real de la factura
-            if (empty($h['U_FacSerie'])) {
-                $ncfOrigReal = $factura['U_FACNUM'] ?: $factura['NumAtCard'];
-                $serie = (stripos($ncfOrigReal, 'E') === 0) ? 'E34' : 'B04';
+            // Serie fijada o determinada automáticamente según el NCF de la factura
+            $serie = strtoupper(trim($h['U_FacSerie'] ?? ''));
+            if (empty($serie)) {
+                $ncfOrigDetect = $factura['U_FACNUM'] ?: ($factura['NumAtCard'] ?? '');
+                $serie = (stripos($ncfOrigDetect, 'E') === 0) ? 'E34' : 'B04';
+            }
+
+            $tipoNC = trim($h['U_TipoNC'] ?? '');
+            if (empty($tipoNC)) {
+                throw new Exception('El tipo de Nota de Crédito es obligatorio.');
+            }
+
+            $motivo = trim($h['Comments'] ?? '');
+            if (empty($motivo)) {
+                throw new Exception('El motivo de la Nota de Crédito es obligatorio.');
             }
 
             // ---------- Validar saldo disponible ----------
@@ -350,6 +344,7 @@ class NotaNCFController {
                     'taxCode'    => trim($l['TaxCode'] ?? ''),
                     'qty'        => $qty,
                     'price'      => $price,
+                    'priceBefDi' => (float)str_replace(',', '', (string)($l['PriceBefDi'] ?? $l['Price'] ?? 0)),
                     'discPrcnt'  => $discPrcnt,
                     'lineNeto'   => round($lineNeto, 6),
                     'lineVat'    => round($lineVat, 6),
@@ -542,8 +537,8 @@ class NotaNCFController {
                     $lp['qty'],           // Quantity
                     $lp['qty'],           // OpenQty
                     $lp['qty'],           // OpenCreQty
-                    $lp['price'],         // Price
-                    $lp['price'],         // PriceBefDi
+                    $lp['price'],         // Price (Copago efectivamente acreditado)
+                    $lp['priceBefDi'],    // PriceBefDi (Precio de lista de origen)
                     $lp['discPrcnt'],     // DiscPrcnt
                     $lp['lineNeto'],      // LineTotal (neto sin vat)
                     $lp['vatPrcnt'],      // VatPrcnt
@@ -609,20 +604,45 @@ class NotaNCFController {
                 }
             }
 
+            // ---------- Devolución / Egreso de Efectivo en Caja (Evaluación de parámetro) ----------
+            $devolverEfectivo = isset($h['devolver_efectivo']) 
+                ? (filter_var($h['devolver_efectivo'], FILTER_VALIDATE_BOOLEAN) || $h['devolver_efectivo'] === 'Y' || $h['devolver_efectivo'] === '1' || $h['devolver_efectivo'] === 1) 
+                : false;
+
             // ---------- Actualizar Factura Origen en POSOINV ----------
-            // Si el saldo restante queda en 0 (<= 0.01), la factura se cierra (C_DocStatus = 'C')
+            // Si el saldo restante queda en 0 (<= 0.01), la factura queda saldada/cerrada (C_DocStatus = 'C')
             $nuevoSaldo = $saldoDisponible - $ncTotal;
-            $nuevoStatus = ($nuevoSaldo <= 0.01) ? 'C' : 'O';
+            $esAnulacionTotal = ($nuevoSaldo <= 0.01);
+            $nuevoStatus = $esAnulacionTotal ? 'C' : 'O';
+            $nuevoCanceled = $esAnulacionTotal ? 'Y' : 'N';
+
+            // Tratamiento contable y financiero de PaidToDate (Monto efectivamente cobrado):
+            $facDocTotal = (float)($factura['DocTotal'] ?? 0);
+            $facPaidToDate = (float)($factura['PaidToDate'] ?? 0);
+            $esFacturaPagada = ($facPaidToDate >= $facDocTotal - 0.01 && $facDocTotal > 0);
+
+            if ($esFacturaPagada) {
+                if ($devolverEfectivo) {
+                    $nuevoPaidToDate = max(0.0, $facPaidToDate - $ncTotal);
+                } else {
+                    $nuevoPaidToDate = $facDocTotal;
+                }
+            } else {
+                $nuevoPaidToDate = min($facDocTotal, $facPaidToDate + $ncTotal);
+            }
+
             $sqlUpdFac = "UPDATE POSOINV
-                          SET PaidToDate  = ISNULL(PaidToDate, 0) + ?,
+                          SET PaidToDate  = ?,
                               C_DocStatus = ?,
+                              CANCELED    = CASE WHEN ? = 'Y' THEN 'Y' ELSE CANCELED END,
                               C_Updated   = GETDATE(),
                               U_user      = ?
                           WHERE C_DocEntry = ?";
             $stmtUpd = $pdo->prepare($sqlUpdFac);
             $stmtUpd->execute([
-                round($ncTotal, 6),
+                round($nuevoPaidToDate, 6),
                 $nuevoStatus,
+                $nuevoCanceled,
                 $usuario,
                 $cDocOrigenNum
             ]);
@@ -1173,7 +1193,7 @@ class NotaNCFController {
         // 2. Tipos de Anulación para filtros
         $tiposNC = [];
         try {
-            $stmtTipos = $pdo->query("SELECT code, Name FROM TIPOS_ANULACION ORDER BY code");
+            $stmtTipos = $pdo->query("SELECT Code as code, Code, Name FROM TIPOS_ANULACION ORDER BY Name ASC");
             if ($stmtTipos) {
                 $tiposNC = $stmtTipos->fetchAll(PDO::FETCH_ASSOC);
             }
@@ -1208,7 +1228,7 @@ class NotaNCFController {
                     nc.C_DocStatus,
                     ISNULL(nc.CANCELED, 'N') AS CANCELED
                   FROM POSORIN nc
-                  LEFT JOIN TIPOS_ANULACION ta ON nc.U_TipoNC = ta.code
+                  LEFT JOIN TIPOS_ANULACION ta ON nc.U_TipoNC = ta.Code
                   LEFT JOIN usuario u ON (nc.U_user = u.usuario OR nc.U_user = CAST(u.id_usuario AS VARCHAR(20)) OR nc.U_user = u.nombre)
                   ORDER BY nc.C_DocEntry DESC";
         $stmtList = $pdo->query($sqlNC);
@@ -1266,12 +1286,28 @@ class NotaNCFController {
                         FORMAT(inv.DocDate, 'dd/MM/yyyy') AS FacturaDocDateFmt,
                         -- Datos de la ND anulatoria
                         nd.U_FACNUM AS ND_NumNCF,
-                        FORMAT(nd.DocDate, 'dd/MM/yyyy') AS ND_DocDateFmt
+                        FORMAT(nd.DocDate, 'dd/MM/yyyy') AS ND_DocDateFmt,
+                        -- Datos de Aprobación ARS si la factura origen tuvo cobertura
+                        ars_info.NombreARS,
+                        ars_info.NumAprobacion,
+                        ars_info.MontoARS,
+                        ars_info.TotalCopago
                      FROM POSORIN nc
-                     LEFT JOIN TIPOS_ANULACION ta ON nc.U_TipoNC = ta.code
+                     LEFT JOIN TIPOS_ANULACION ta ON nc.U_TipoNC = ta.Code
                      LEFT JOIN POSOINV inv ON nc.C_DocOrigenNum = inv.C_DocEntry
                      LEFT JOIN POSODIN nd ON nd.C_DocOrigenNum = nc.C_DocEntry
                      LEFT JOIN usuario u ON (nc.U_user = u.usuario OR nc.U_user = CAST(u.id_usuario AS VARCHAR(20)) OR nc.U_user = u.nombre)
+                     OUTER APPLY (
+                         SELECT 
+                             MAX(COALESCE(ars_soc.CardName, a_inner.CardCode_ARS)) AS NombreARS,
+                             STRING_AGG(a_inner.NumAprobacion, ', ') AS NumAprobacion,
+                             SUM(ISNULL(a_inner.MontoAprobado, 0)) AS MontoARS,
+                             SUM(ISNULL(a_inner.MontoResponsable, 0)) AS TotalCopago
+                         FROM AprobacionARS a_inner WITH (NOLOCK)
+                         LEFT JOIN posOCRD ars_soc WITH (NOLOCK) ON a_inner.CardCode_ARS = ars_soc.CardCode
+                         WHERE a_inner.DocEntry_Factura = inv.C_DocEntry AND a_inner.Status <> 'R'
+                         GROUP BY a_inner.DocEntry_Factura
+                     ) ars_info
                      WHERE nc.C_DocEntry = ?";
             
             $stmtH = $pdo->prepare($sqlH);

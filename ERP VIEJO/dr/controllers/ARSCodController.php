@@ -55,7 +55,9 @@ class ARSCodController {
 
         // 2. Obtener historial completo de aprobaciones
         $sql = "SELECT 
-                    a.IdARS, a.TipoSocio, a.CardCode, a.CardName, a.NumExpediente, a.NumAfiliado,
+                    a.IdARS, a.TipoSocio, a.CardCode, a.CardName, 
+                    COALESCE(NULLIF(LTRIM(RTRIM(a.NumExpediente)), ''), pac.U_expediente, '') as NumExpediente,
+                    COALESCE(NULLIF(LTRIM(RTRIM(a.NumAfiliado)), ''), pac.U_CadenaID, '') as NumAfiliado,
                     a.CardCode_ARS, a.NumAprobacion, 
                     a.FechaAprobacionD,
                     a.FechaAprobacionT,

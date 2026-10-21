@@ -130,7 +130,7 @@
                         <th style="width: 10%;">Código</th>
                         <th style="width: 32%;">Descripción</th>
                         <th style="width: 8%;" class="text-center">Cant.</th>
-                        <th style="width: 12%;" class="text-end">Precio (RD$)</th>
+                        <th style="width: 12%;" class="text-end" title="Precio de lista oficial sin deducción de seguro ni descuentos">Precio Lista (RD$)</th>
                         <th style="width: 8%;" class="text-center">% Desc</th>
                         <th style="width: 8%;" class="text-center">ITBIS %</th>
                         <th style="width: 8%;" class="text-center">Almacén</th>
@@ -936,6 +936,15 @@ function renderTabla() {
     let descTotal = 0; 
     let impTotal = 0;
 
+    let itemsConARS = detalleFactura.filter(l => l.aprobacionARS);
+    let hayAprobacionesPorArticulo = (itemsConARS.length > 0);
+
+    // Si hay aprobaciones por artículo, la aprobación general queda TOTALMENTE ANULADA
+    if (hayAprobacionesPorArticulo) {
+        payloadAprobacionARS = null;
+        $('#badgeArsActivo').remove();
+    }
+
     detalleFactura.forEach((l, i) => {
         let descLineaMonto = (l.Quantity * l.PriceBefDi) * (l.DiscPrcnt / 100);
         let lineNeto = (l.Quantity * l.PriceBefDi) - descLineaMonto;
@@ -948,16 +957,59 @@ function renderTabla() {
 
         let inputDesc = '';
         if(l.EditableDesc === 'Y') {
-            inputDesc = `<input type="text" class="input-table-desc desc-editable-highlight w-100" value="${l.ItemName}" oninput="detalleFactura[${i}].ItemName=this.value">`;
+            inputDesc = `<input type="text" class="input-table-desc desc-editable-highlight flex-grow-1 me-2" value="${l.ItemName}" oninput="detalleFactura[${i}].ItemName=this.value">`;
         } else {
-            inputDesc = `<span class="fw-semibold text-dark">${l.ItemName}</span>`;
+            inputDesc = `<span class="fw-semibold text-dark text-truncate">${l.ItemName}</span>`;
+        }
+
+        // Indicador / Botón compacto de Aprobación ARS
+        let badgeARS = '';
+        let pacActual = window.pacienteSeleccionadoARS || {};
+        let pacTieneSeguro = !!(pacActual.U_SubGrupo || pacActual.U_CadenaID || pacActual.NombreARS);
+
+        if (l.aprobacionARS) {
+            let pct = parseFloat(l.aprobacionARS.PorcentajeCober) || 0;
+            let mResp = parseFloat(l.aprobacionARS.MontoResponsable) || 0;
+            let es100 = (pct >= 99.99 || mResp <= 0.001);
+            let autNum = l.aprobacionARS.NumAprobacion || '';
+            
+            if (es100) {
+                badgeARS = `<span class="badge bg-primary-subtle text-primary border border-primary font-monospace ms-2" style="cursor:pointer;font-size:0.72rem;padding:2px 5px;" onclick="abrirModalARSArticulo(${i})" title="Aut: ${autNum} (100% Cubierto) - Clic para editar"><i class="bi bi-shield-fill-check me-1"></i>100%</span><button type="button" class="btn btn-link btn-sm text-danger p-0 ms-1" style="font-size:0.75rem;line-height:1;" onclick="event.stopPropagation(); quitarAprobacionArticulo(${i})" title="Quitar seguro"><i class="bi bi-x-circle-fill"></i></button>`;
+            } else {
+                badgeARS = `<span class="badge bg-success-subtle text-success border border-success font-monospace ms-2" style="cursor:pointer;font-size:0.72rem;padding:2px 5px;" onclick="abrirModalARSArticulo(${i})" title="Aut: ${autNum} (${pct.toFixed(0)}%) - Copago: RD$ ${mResp.toFixed(2)} - Clic para editar"><i class="bi bi-shield-check me-1"></i>${pct.toFixed(0)}%</span><button type="button" class="btn btn-link btn-sm text-danger p-0 ms-1" style="font-size:0.75rem;line-height:1;" onclick="event.stopPropagation(); quitarAprobacionArticulo(${i})" title="Quitar seguro"><i class="bi bi-x-circle-fill"></i></button>`;
+            }
+        } else if (!hayAprobacionesPorArticulo && payloadAprobacionARS) {
+            badgeARS = `<span class="badge bg-light text-muted border ms-2" style="font-size:0.68rem;" title="Cubierto por la Aprobación General de la Factura"><i class="bi bi-shield me-1"></i>General</span>`;
+        } else if (pacTieneSeguro) {
+            badgeARS = `<button type="button" class="btn btn-outline-success btn-sm py-0 px-2 font-monospace ms-2" style="font-size:0.70rem;line-height:1.2;" onclick="abrirModalARSArticulo(${i})" title="Agregar autorización ARS para este artículo"><i class="bi bi-shield-plus me-1"></i>ARS</button>`;
+        }
+
+        // Información de copago unitario si tiene autorización de seguro
+        let copagoInfoHtml = '';
+        if (l.aprobacionARS) {
+            let mResp = parseFloat(l.aprobacionARS.MontoResponsable) || 0;
+            let pct = parseFloat(l.aprobacionARS.PorcentajeCober) || 0;
+            if (pct < 99.99 && mResp > 0) {
+                let copagoUnit = mResp / (parseFloat(l.Quantity) || 1);
+                copagoInfoHtml = `<div class="text-success fw-bold" style="font-size:0.72rem;" title="Copago unitario estimado del paciente tras cobertura ARS">Copago: RD$ ${copagoUnit.toFixed(2)}</div>`;
+            } else if (pct >= 99.99 || mResp <= 0.001) {
+                copagoInfoHtml = `<div class="text-primary fw-bold" style="font-size:0.72rem;"><i class="bi bi-shield-fill-check me-1"></i>100% Cubierto</div>`;
+            }
         }
 
         html += `<tr>
             <td class="font-monospace fw-bold">${l.ItemCode}</td>
-            <td>${inputDesc}</td>
+            <td>
+                <div class="d-flex align-items-center justify-content-between">
+                    ${inputDesc}
+                    <div class="d-inline-flex align-items-center flex-shrink-0">${badgeARS}</div>
+                </div>
+            </td>
             <td class="text-center"><input type="number" min="1" step="1" class="input-table-qty text-center font-monospace" style="width: 65px;" value="${l.Quantity}" onchange="actualizarCantidad(${i}, this.value)"></td>
-            <td class="text-end font-monospace">RD$ ${l.PriceBefDi.toFixed(2)}</td>
+            <td class="text-end font-monospace">
+                <div class="fw-bold text-dark">RD$ ${l.PriceBefDi.toFixed(2)}</div>
+                ${copagoInfoHtml}
+            </td>
             <td class="text-center"><input type="number" min="0" max="100" step="1" class="input-table-disc text-center font-monospace" style="width: 60px;" value="${l.DiscPrcnt}" onchange="actualizarDescuento(${i}, this.value)"></td>
             <td class="text-center font-monospace">${l.VatPrcnt.toFixed(2)}%</td>
             <td class="text-center"><span class="badge bg-light text-dark border">${l.WhsCode}</span></td>
@@ -977,9 +1029,100 @@ function renderTabla() {
     $('#lblImpuesto').text('RD$ ' + impTotal.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     $('#lblTotal').text('RD$ ' + totalGeneral.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
-    // Recalcular banner del modal ARS si está abierto o si hay payload activo
-    if (typeof calcularMontosARS === 'function') {
-        calcularMontosARS('init');
+    // GESTIÓN DE EXCLUSIVIDAD MUTUA Y CÁLCULO DE COPAGO
+    if (hayAprobacionesPorArticulo) {
+        // Desactivar y bloquear aprobación general si se usan autorizaciones individuales
+        payloadAprobacionARS = null;
+        $('#txtNumAprobacion')
+            .val(`${itemsConARS.length} servicio(s) autorizados`)
+            .prop('readonly', true)
+            .prop('disabled', true)
+            .css('background-color', '#f1f5f9')
+            .attr('title', 'Autorizaciones individuales asignadas por artículo.');
+        $('#txtNumAprobacion').next('button')
+            .prop('disabled', true)
+            .attr('title', 'Aprobaciones asignadas por artículo individual');
+        $('#badgeArsActivo').remove();
+        if ($('#badgeArsPorArticulos').length === 0) {
+            $('#txtNumAprobacion').parent().append('<span id="badgeArsPorArticulos" class="badge-ars-activo" title="Aprobaciones individuales activas"><i class="bi bi-shield-check"></i> Por Artículos</span>');
+        }
+
+        // Calcular copago sumando artículos con seguro + artículos privados
+        let totalCopagoPorArticulos = 0;
+        let totalCobARSPorArticulos = 0;
+
+        detalleFactura.forEach(l => {
+            let descL = (l.Quantity * l.PriceBefDi) * (l.DiscPrcnt / 100);
+            let netoL = (l.Quantity * l.PriceBefDi) - descL;
+            let impL = netoL * (l.VatPrcnt / 100);
+            let totalLBruto = netoL + impL;
+
+            if (l.aprobacionARS) {
+                let mAprob = parseFloat(l.aprobacionARS.MontoAprobado) || 0;
+                let mResp = parseFloat(l.aprobacionARS.MontoResponsable) || 0;
+                totalCobARSPorArticulos += mAprob;
+                totalCopagoPorArticulos += mResp;
+            } else {
+                totalCopagoPorArticulos += totalLBruto;
+            }
+        });
+
+        // Mostrar fila de copago en totales
+        if (totalCopagoPorArticulos > 0.001) {
+            let copagoFormatted = totalCopagoPorArticulos.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            $('#lblCopagoTitulo').html('<i class="bi bi-shield-check me-1 text-success"></i>Copago Paciente (ARS):');
+            $('#lblCopagoARS').text('RD$ ' + copagoFormatted);
+            $('#rowCopago').show();
+            if (typeof actualizarBotonProcesar === 'function') {
+                actualizarBotonProcesar(false, copagoFormatted);
+            }
+        } else if (totalCobARSPorArticulos > 0) {
+            // Todos los artículos están cubiertos al 100%
+            $('#lblCopagoTitulo').html('<i class="bi bi-shield-fill-check me-1 text-success"></i>Cobertura ARS (100%):');
+            $('#lblCopagoARS').html('<span class="badge bg-success font-monospace px-2 py-1"><i class="bi bi-check2-all me-1"></i>Totalmente Cubierto (RD$ 0.00)</span>');
+            $('#rowCopago').show();
+            if (typeof actualizarBotonProcesar === 'function') {
+                actualizarBotonProcesar(true, '0.00');
+            }
+        } else {
+            $('#rowCopago').hide();
+            if (typeof actualizarBotonProcesar === 'function') {
+                actualizarBotonProcesar(false, null);
+            }
+        }
+    } else {
+        // No hay aprobaciones por artículo: Desbloquear input general
+        $('#badgeArsPorArticulos').remove();
+        let pacActual = window.pacienteSeleccionadoARS || {};
+        let pacTieneSeguro = !!(pacActual.U_SubGrupo || pacActual.U_CadenaID || pacActual.NombreARS);
+
+        if (pacTieneSeguro) {
+            $('#txtNumAprobacion').prop('disabled', false).attr('title', 'Haga clic para registrar o consultar autorización de la ARS');
+            $('#txtNumAprobacion').next('button').prop('disabled', false).attr('title', 'Abrir ventana de Aprobación ARS');
+        }
+        if (!payloadAprobacionARS) {
+            $('#txtNumAprobacion').val('').css('background-color', '');
+            $('#badgeArsActivo').remove();
+            $('#rowCopago').hide();
+            if (typeof actualizarBotonProcesar === 'function') {
+                actualizarBotonProcesar(false, null);
+            }
+        } else {
+            // Hay aprobación general activa
+            if (typeof calcularMontosARS === 'function') {
+                calcularMontosARS('init');
+            }
+        }
+    }
+}
+
+function quitarAprobacionArticulo(idx) {
+    if (typeof detalleFactura !== 'undefined' && detalleFactura[idx]) {
+        delete detalleFactura[idx].aprobacionARS;
+        renderTabla();
+        if (typeof showPosToast === 'function') {
+            showPosToast("Aprobación del artículo removida.", "info");
+        }
     }
 }
 
@@ -987,6 +1130,15 @@ function actualizarCantidad(idx, val) {
     let qty = parseFloat(val) || 1;
     if(qty < 1) qty = 1;
     detalleFactura[idx].Quantity = qty;
+    // Si tenía aprobación ARS, ajustar montos proporcionales si es necesario
+    if (detalleFactura[idx].aprobacionARS) {
+        let ap = detalleFactura[idx].aprobacionARS;
+        let pct = parseFloat(ap.PorcentajeCober) || 0;
+        let precio = parseFloat(detalleFactura[idx].PriceBefDi || detalleFactura[idx].Price) || 0;
+        let nuevoBruto = qty * precio;
+        ap.MontoAprobado = nuevoBruto * (pct / 100);
+        ap.MontoResponsable = Math.max(0, nuevoBruto - ap.MontoAprobado);
+    }
     renderTabla();
 }
 
@@ -1034,12 +1186,22 @@ function iniciarProcesoFactura() {
         return; 
     }
 
+    let itemsConARS = detalleFactura.filter(l => l.aprobacionARS);
+    let esPorArticulos = (itemsConARS.length > 0);
+    let todosArticulosCob100 = esPorArticulos && detalleFactura.every(l => {
+        if (!l.aprobacionARS) return false;
+        let pct = parseFloat(l.aprobacionARS.PorcentajeCober) || 0;
+        let mResp = parseFloat(l.aprobacionARS.MontoResponsable) || 0;
+        return (pct >= 99.99 || mResp <= 0.001);
+    });
+
     let facSerie = $('#cboTipoNCF').val();
     let esCob100 = (
-        typeof payloadAprobacionARS !== 'undefined' && 
+        (typeof payloadAprobacionARS !== 'undefined' && 
         payloadAprobacionARS && 
         (parseFloat(payloadAprobacionARS.PorcentajeCober) >= 99.99 || parseFloat(payloadAprobacionARS.MontoResponsable) <= 0.001) && 
-        parseFloat(payloadAprobacionARS.MontoAprobado) > 0
+        parseFloat(payloadAprobacionARS.MontoAprobado) > 0)
+        || todosArticulosCob100
     );
 
     if (!facSerie && !esCob100) {
@@ -1068,11 +1230,24 @@ function iniciarProcesoFactura() {
             DiscPrcnt: parseFloat($('#txtDescGlobal').val()) || 0, 
             U_SCIASerie: 'F',
             DocDate: $('#txtDocDate').val(),
-            U_NumAprobacion: numAprobacion // Número de aprobación (referencia rápida)
+            U_NumAprobacion: esPorArticulos ? '' : numAprobacion // Número de aprobación si es general
         },
-        lines: detalleFactura,
-        // Payload completo de aprobación ARS (null si no aplica seguro)
-        aprobacion_ars: (typeof payloadAprobacionARS !== 'undefined' && payloadAprobacionARS) ? payloadAprobacionARS : null,
+        lines: detalleFactura.map(l => ({
+            ItemCode: l.ItemCode,
+            ItemName: l.ItemName,
+            Dscription: l.ItemName,
+            Quantity: l.Quantity,
+            PriceBefDi: l.PriceBefDi,
+            Price: l.Price,
+            DiscPrcnt: l.DiscPrcnt,
+            VatPrcnt: l.VatPrcnt,
+            WhsCode: l.WhsCode,
+            TaxCode: l.TaxCode,
+            EditableDesc: l.EditableDesc,
+            aprobacion_ars: l.aprobacionARS || null
+        })),
+        // Payload de aprobación general (null si se usó aprobación por artículo)
+        aprobacion_ars: (!esPorArticulos && typeof payloadAprobacionARS !== 'undefined' && payloadAprobacionARS) ? payloadAprobacionARS : null,
         pagos: {}
     };
 

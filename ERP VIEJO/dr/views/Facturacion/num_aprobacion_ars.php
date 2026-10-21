@@ -348,14 +348,150 @@ function abrirModalEditarAprobacionARS(data) {
     setTimeout(() => $('#ars_NumAprobacion').focus(), 250);
 }
 
+// Variable global para identificar si el modal se abrió para un artículo específico de la factura
+window.arsArticuloIndex = null;
+
 // ============================================================
-// ABRIR MODAL EN MODO NUEVA FACTURA (factura_venta)
+// ABRIR MODAL PARA UN ARTÍCULO ESPECÍFICO (factura_venta)
 // ============================================================
-function abrirModalARS() {
+function abrirModalARSArticulo(idx) {
+    if (typeof detalleFactura === 'undefined' || !detalleFactura[idx]) return;
+    
+    let cardCode = $('#txtCardCode').val();
+    let cardName = $('#txtCardName').val();
+
+    if (!cardCode) {
+        if (typeof showPosToast === 'function') {
+            showPosToast("Debe seleccionar primero un paciente para registrar la aprobación de seguro.", "warning");
+        } else {
+            alert("Debe seleccionar primero un paciente.");
+        }
+        if (typeof abrirModalCliente === 'function') {
+            abrirModalCliente();
+        }
+        return;
+    }
+
+    window.arsArticuloIndex = idx;
+    let item = detalleFactura[idx];
+
     $('#ars_IdARS').val('');
     $('#ars_Status').val('P');
-    $('.modal-ars-title').text('Aprobación de Cobertura ARS / Seguro');
-    $('.modal-ars-subtitle').text('Registro y validación de autorización médica de la aseguradora');
+    $('.modal-ars-title').html('Autorización ARS para: ' + (item.ItemName || item.ItemCode));
+    $('.modal-ars-subtitle').text('Procedimiento / Artículo: ' + item.ItemCode + ' - ' + item.ItemName);
+    $('.btn-ars-clear').show();
+    $('.btn-ars-apply').html('<i class="bi bi-check2-circle fs-5"></i> Aplicar al Artículo');
+
+    // Cargar datos del paciente en el modal
+    let paciente = window.pacienteSeleccionadoARS || {};
+    $('#ars_TipoSocio').val(paciente.CardType || 'P');
+    $('#ars_CardCode').val(cardCode);
+    $('#ars_CardName').val(cardName);
+    $('#ars_NumExpediente').val(paciente.U_expediente || '');
+    $('#ars_NumAfiliado').val(paciente.U_CadenaID || '');
+    $('#ars_CardCode_ARS').val(paciente.U_SubGrupo || '');
+
+    // Etiquetas informativas visuales
+    $('#lblArsCardName').text(cardName);
+    $('#lblArsCardCode').text(`Código: ${cardCode}`);
+    $('#lblArsNumExpediente').text(paciente.U_expediente ? `EXP-${paciente.U_expediente}` : 'Sin Expediente');
+    $('#lblArsNumAfiliado').text(paciente.U_CadenaID || 'Sin N° Afiliado');
+    
+    if (paciente.NombreARS || paciente.U_SubGrupo) {
+        let nombreArs = paciente.NombreARS || paciente.U_SubGrupo;
+        $('#lblArsNombreARS').html(`<span class="badge-ars"><i class="bi bi-hospital me-1"></i>${nombreArs}</span>`);
+        $('#lblArsCardCodeARS').text(`ARS Cod: ${paciente.U_SubGrupo || ''}`);
+    } else {
+        $('#lblArsNombreARS').html('<span class="badge-ars" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Sin Seguro Asignado</span>');
+        $('#lblArsCardCodeARS').text('');
+    }
+
+    // Inicializar fechas por defecto si están vacías
+    if (!$('#ars_FechaAprobacionT').val()) {
+        $('#ars_FechaAprobacionT').val(obtenerFechaHoraActualLocal(0));
+    }
+    if (!$('#ars_FechaVencimientoT').val()) {
+        $('#ars_FechaVencimientoT').val(obtenerFechaHoraActualLocal(30));
+    }
+
+    // Calcular monto base de este artículo específico (precio * cantidad menos descuento)
+    let cant = parseFloat(item.Quantity) || 1;
+    let precio = parseFloat(item.PriceBefDi || item.Price) || 0;
+    let descP = parseFloat(item.DiscPrcnt) || 0;
+    let bruto = cant * precio;
+    let desc = bruto * (descP / 100);
+    let totalItemBase = bruto - desc;
+
+    $('#ars_TotalFacturaBase').val(totalItemBase);
+
+    // Tipo de servicio predeterminado
+    $('#ars_TipoServicio').val('CONSULTA MEDICA');
+    let itemDescUpper = (item.ItemName || '').toUpperCase();
+    if (itemDescUpper.includes('PROCEDIMIENTO') || itemDescUpper.includes('CIRUGIA') || itemDescUpper.includes('OPERACION') || itemDescUpper.includes('LASER')) {
+        $('#ars_TipoServicio').val('PROCEDIMIENTO / CIRUGIA');
+    } else if (itemDescUpper.includes('ESTUDIO') || itemDescUpper.includes('OCT') || itemDescUpper.includes('CAMPIMETRIA') || itemDescUpper.includes('TOPOGRAFIA')) {
+        $('#ars_TipoServicio').val('DIAGNOSTICO / ESTUDIOS');
+    } else if (itemDescUpper.includes('DESECHABLE') || itemDescUpper.includes('LENTE') || itemDescUpper.includes('MATERIAL')) {
+        $('#ars_TipoServicio').val('MATERIALES MEDICOS');
+    }
+
+    // Si el artículo ya tenía aprobación asignada previamente, cargarla
+    if (item.aprobacionARS) {
+        let ap = item.aprobacionARS;
+        $('#ars_NumAprobacion').val(ap.NumAprobacion || '');
+        if (ap.FechaAprobacionT) $('#ars_FechaAprobacionT').val(ap.FechaAprobacionT);
+        if (ap.FechaVencimientoT) $('#ars_FechaVencimientoT').val(ap.FechaVencimientoT);
+        if (ap.TipoServicio) $('#ars_TipoServicio').val(ap.TipoServicio);
+        $('#ars_PorcentajeCober').val(ap.PorcentajeCober || '');
+        $('#ars_MontoAprobado').val(ap.MontoAprobado || '');
+        $('#ars_MontoResponsable').val(ap.MontoResponsable || '');
+        $('#ars_Observaciones').val(ap.Observaciones || '');
+    } else {
+        $('#ars_NumAprobacion').val('');
+        $('#ars_PorcentajeCober').val('');
+        $('#ars_MontoAprobado').val('');
+        $('#ars_MontoResponsable').val('');
+        $('#ars_Observaciones').val('');
+    }
+
+    // DESBLOQUEAR INPUTS FINANCIEROS
+    $('#ars_PorcentajeCober, #ars_MontoAprobado, #ars_MontoResponsable')
+        .prop('readonly', false)
+        .removeClass('ars-input-readonly');
+    $('#ars_botones_porcentaje').show();
+    $('.ars-lock-icon').addClass('d-none');
+    $('#badgeArsModoEdicion').addClass('d-none');
+    $('#lblArsAyudaCobertura').text('En base al importe de este artículo (RD$ ' + totalItemBase.toLocaleString('es-DO', {minimumFractionDigits: 2}) + ')');
+
+    // Recalcular montos en base a este artículo
+    calcularMontosARS('init');
+
+    // Mostrar modal con overlay
+    $('#modalAprobacionARS').addClass('active');
+    setTimeout(() => $('#ars_NumAprobacion').focus(), 250);
+}
+
+// ============================================================
+// ABRIR MODAL EN MODO GENERAL PARA TODA LA FACTURA (factura_venta)
+// ============================================================
+function abrirModalARS() {
+    window.arsArticuloIndex = null;
+    $('#ars_TotalFacturaBase').val(0);
+
+    // Verificar si ya existen aprobaciones por artículo
+    if (typeof detalleFactura !== 'undefined' && detalleFactura.some(l => l.aprobacionARS)) {
+        if (typeof showPosToast === 'function') {
+            showPosToast("Ya tiene aprobaciones asignadas por artículo. La autorización general para toda la factura está bloqueada.", "warning");
+        } else {
+            alert("Ya tiene aprobaciones asignadas por artículo.");
+        }
+        return;
+    }
+
+    $('#ars_IdARS').val('');
+    $('#ars_Status').val('P');
+    $('.modal-ars-title').text('Aprobación de Cobertura ARS / Seguro (General)');
+    $('.modal-ars-subtitle').text('Registro de autorización médica para toda la factura');
     $('.btn-ars-clear').show();
     $('.btn-ars-apply').html('<i class="bi bi-check2-circle fs-5"></i> Aplicar y Guardar');
 
@@ -456,6 +592,7 @@ function abrirModalARS() {
 // Cerrar el Modal de Aprobación ARS
 function cerrarModalARS() {
     $('#modalAprobacionARS').removeClass('active');
+    window.arsArticuloIndex = null;
     $('#ars_IdARS').val('');
     $('#ars_PorcentajeCober, #ars_MontoAprobado, #ars_MontoResponsable')
         .prop('readonly', false)
@@ -468,6 +605,12 @@ function cerrarModalARS() {
 
 // Obtener el total neto actual de la factura desde la interfaz o base guardada
 function obtenerTotalFacturaActual() {
+    // Si se abrió para un artículo específico, la base debe ser el total del artículo
+    if (window.arsArticuloIndex !== null) {
+        let totalBase = parseFloat($('#ars_TotalFacturaBase').val()) || 0;
+        if (totalBase > 0) return totalBase;
+    }
+
     if ($('#lblTotal').length > 0) {
         let totalTexto = $('#lblTotal').text() || '0';
         let totalLimpio = totalTexto.replace(/[^\d.-]/g, '');
@@ -555,6 +698,61 @@ function aplicarAprobacionARS() {
     let numAfiliadoVal = $('#ars_NumAfiliado').val() || '';
 
     let idARS = parseInt($('#ars_IdARS').val()) || 0;
+
+    // ── MODO ARTÍCULO ESPECÍFICO (factura_venta) ──
+    if (window.arsArticuloIndex !== null) {
+        let idx = window.arsArticuloIndex;
+        if (typeof detalleFactura === 'undefined' || !detalleFactura[idx]) {
+            cerrarModalARS();
+            return;
+        }
+
+        let item = detalleFactura[idx];
+        let pacActual = window.pacienteSeleccionadoARS || {};
+
+        item.aprobacionARS = {
+            ItemCode: item.ItemCode,
+            ItemName: item.ItemName,
+            LineNum: idx,
+            NumAprobacion: numAprob,
+            TipoServicio: $('#ars_TipoServicio').val() || item.ItemName || 'CONSULTA MEDICA',
+            FechaAprobacionT: fAprobT ? fAprobT.replace('T', ' ') + ':00' : null,
+            FechaAprobacionD: fAprobD,
+            FechaVencimientoT: fVencT ? fVencT.replace('T', ' ') + ':00' : null,
+            FechaVencimientoD: fVencD,
+            MontoAprobado: montoAprobado,
+            PorcentajeCober: porcentajeCober,
+            MontoResponsable: montoResponsable,
+            Observaciones: $('#ars_Observaciones').val().trim(),
+            CardCode_ARS: $('#ars_CardCode_ARS').val(),
+            NumAfiliado: numAfiliadoVal,
+            NumExpediente: $('#ars_NumExpediente').val() || (pacActual.U_expediente || ''),
+            CardCode: $('#ars_CardCode').val() || (pacActual.CardCode || $('#txtCardCode').val() || ''),
+            CardName: $('#ars_CardName').val() || (pacActual.CardName || $('#txtCardName').val() || ''),
+            TipoSocio: $('#ars_TipoSocio').val() || (pacActual.CardType || 'P'),
+            Status: 'P'
+        };
+
+        // Si existía una aprobación general activa, ANULARLA de inmediato porque se pasa a modalidad por artículo
+        payloadAprobacionARS = null;
+        $('#badgeArsActivo').remove();
+
+        window.arsArticuloIndex = null;
+        cerrarModalARS();
+
+        if (typeof renderTabla === 'function') {
+            renderTabla();
+        }
+
+        if (typeof showPosToast === 'function') {
+            if (montoResponsable <= 0.001 && montoAprobado > 0) {
+                showPosToast(`Aprobación ${numAprob} aplicada a ${item.ItemName} (Cobertura 100%).`, "success");
+            } else {
+                showPosToast(`Aprobación ${numAprob} aplicada a ${item.ItemName} (${porcentajeCober}%).`, "success");
+            }
+        }
+        return;
+    }
 
     // ── MODO EDICIÓN EN BASE DE DATOS (consulta_aprobaciones) ──
     if (idARS > 0) {
@@ -698,6 +896,22 @@ function aplicarAprobacionARS() {
 
 // Limpiar la Aprobación
 function limpiarAprobacionARS() {
+    if (window.arsArticuloIndex !== null) {
+        let idx = window.arsArticuloIndex;
+        if (typeof detalleFactura !== 'undefined' && detalleFactura[idx]) {
+            delete detalleFactura[idx].aprobacionARS;
+        }
+        window.arsArticuloIndex = null;
+        cerrarModalARS();
+        if (typeof renderTabla === 'function') {
+            renderTabla();
+        }
+        if (typeof showPosToast === 'function') {
+            showPosToast("Aprobación del artículo removida.", "info");
+        }
+        return;
+    }
+
     payloadAprobacionARS = null;
     $('#ars_NumAprobacion').val('');
     $('#ars_PorcentajeCober').val('');

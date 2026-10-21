@@ -34,40 +34,49 @@
             <input type="hidden" id="esCreditoPendiente" value="<?php echo $esCreditoPendiente ? '1' : '0'; ?>">
             
             <?php if ($arsActivo): ?>
+            <?php 
+                $nombreAseguradora = !empty($arsInfo['NombreARS']) ? $arsInfo['NombreARS'] : (!empty($arsInfo['CardCode_ARS']) ? $arsInfo['CardCode_ARS'] : 'Seguro ARS');
+                $montoAprobado = floatval($arsInfo['MontoAprobado'] ?? 0);
+                $montoResponsable = floatval($arsInfo['MontoResponsable'] ?? $totalPagar);
+                $totalBrutoServicios = floatval($arsInfo['TotalBruto'] ?? ($montoAprobado + $montoResponsable));
+                $porcentajeCober = floatval($arsInfo['PorcentajeCober'] ?? ($totalBrutoServicios > 0 ? round(($montoAprobado / $totalBrutoServicios) * 100, 1) : 0));
+            ?>
             <!-- Banner de Cobertura ARS -->
             <div class="cobro-ars-banner">
                 <div class="cobro-ars-header">
                     <i class="bi bi-shield-check"></i>
                     <span>Cobertura de Seguro Médico Aplicada</span>
-                    <span class="cobro-ars-badge"><?php echo htmlspecialchars($arsInfo['NombreARS'] ?: $arsInfo['CardCode_ARS']); ?></span>
+                    <span class="cobro-ars-badge"><?php echo htmlspecialchars((string)$nombreAseguradora); ?></span>
                 </div>
                 <div class="cobro-ars-grid">
                     <div class="cobro-ars-item">
                         <span class="cobro-ars-label">N° Autorización</span>
-                        <span class="cobro-ars-value font-monospace fw-bold"><?php echo htmlspecialchars($arsInfo['NumAprobacion']); ?></span>
+                        <span class="cobro-ars-value font-monospace fw-bold"><?php echo htmlspecialchars((string)($arsInfo['NumAprobacion'] ?? 'S/N')); ?></span>
                     </div>
                     <div class="cobro-ars-item">
-                        <span class="cobro-ars-label">Total Factura</span>
-                        <span class="cobro-ars-value font-monospace text-muted">RD$ <?php echo number_format($totalPagar, 2); ?></span>
+                        <span class="cobro-ars-label">Total Servicios (Bruto)</span>
+                        <span class="cobro-ars-value font-monospace text-muted">RD$ <?php echo number_format($totalBrutoServicios, 2); ?></span>
                     </div>
                     <div class="cobro-ars-item">
-                        <span class="cobro-ars-label">Cubre ARS (<?php echo number_format($arsInfo['PorcentajeCober'], 1); ?>%)</span>
-                        <span class="cobro-ars-value font-monospace text-success">RD$ <?php echo number_format($arsInfo['MontoAprobado'], 2); ?></span>
+                        <?php 
+                            $esPorArticulos = !empty($arsInfo['esPorArticulos']) || (strpos((string)($arsInfo['NumAprobacion'] ?? ''), ',') !== false);
+                            $labelCubreARS = $esPorArticulos ? 'Cubre ARS' : 'Cubre ARS (' . number_format($porcentajeCober, 1) . '%)';
+                        ?>
+                        <span class="cobro-ars-label"><?php echo $labelCubreARS; ?></span>
+                        <span class="cobro-ars-value font-monospace text-success">RD$ <?php echo number_format($montoAprobado, 2); ?></span>
                     </div>
                     <div class="cobro-ars-item cobro-ars-item-copago">
-                        <span class="cobro-ars-label">Paga Paciente</span>
-                        <span class="cobro-ars-value font-monospace fw-bold text-primary">RD$ <?php echo number_format($arsInfo['MontoResponsable'], 2); ?></span>
                     </div>
                     <?php if (!empty($arsInfo['TipoServicio'])): ?>
                     <div class="cobro-ars-item">
                         <span class="cobro-ars-label">Servicio</span>
-                        <span class="cobro-ars-value"><?php echo htmlspecialchars($arsInfo['TipoServicio']); ?></span>
+                        <span class="cobro-ars-value"><?php echo htmlspecialchars((string)$arsInfo['TipoServicio']); ?></span>
                     </div>
                     <?php endif; ?>
                     <?php if (!empty($arsInfo['NumAfiliado'])): ?>
                     <div class="cobro-ars-item">
                         <span class="cobro-ars-label">N° Afiliado</span>
-                        <span class="cobro-ars-value font-monospace"><?php echo htmlspecialchars($arsInfo['NumAfiliado']); ?></span>
+                        <span class="cobro-ars-value font-monospace"><?php echo htmlspecialchars((string)$arsInfo['NumAfiliado']); ?></span>
                     </div>
                     <?php endif; ?>
                 </div>
@@ -78,14 +87,14 @@
             <div class="cobro-total-banner <?php echo $arsActivo ? 'cobro-total-banner-ars' : ''; ?>">
                 <?php if ($arsActivo): ?>
                     <div class="cobro-total-label" style="font-size:0.7rem; color:#166534;">
-                        <i class="bi bi-person-fill me-1"></i>MONTO A COBRAR AL PACIENTE (Copago)
+                        <i class="bi bi-person-fill me-1"></i>MONTO A COBRAR AL PACIENTE (COPAGO)
                     </div>
                     <div class="cobro-total-value" id="lblTotalPagar" style="color:#0369a1;">
-                        RD$ <?php echo number_format($arsInfo['MontoResponsable'], 2); ?>
+                        RD$ <?php echo number_format($montoResponsable, 2); ?>
                     </div>
                     <div style="font-size:0.72rem; color:#64748b; margin-top:3px;">
-                        Total factura: RD$ <?php echo number_format($totalPagar, 2); ?> 
-                        &nbsp;·&nbsp; ARS cubre: RD$ <?php echo number_format($arsInfo['MontoAprobado'], 2); ?>
+                        Total servicios: RD$ <?php echo number_format($totalBrutoServicios, 2); ?> 
+                        &nbsp;·&nbsp; ARS cubre: RD$ <?php echo number_format($montoAprobado, 2); ?>
                     </div>
                 <?php else: ?>
                     <div class="cobro-total-label">Monto Total a Liquidar</div>

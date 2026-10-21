@@ -70,7 +70,7 @@
                             <i class="bi bi-search me-1"></i> Buscar
                         </button>
                     </div>
-                    <div class="form-text text-muted mt-1" id="lblSearchHelp">Puede buscar por NCF (ej: E310000000001) o por número interno de factura.</div>
+                    <div class="form-text text-muted mt-1" id="lblSearchHelp">Puede buscar por NCFo por número interno de factura.</div>
                 </div>
                 <div class="col-lg-7 col-md-6">
                     <div id="statusBusqueda" class="d-none"></div>
@@ -114,7 +114,6 @@
                     <i class="bi bi-receipt text-danger"></i> NCF Factura
                 </span>
                 <span class="nc-origin-value font-monospace text-danger" id="lblFacNCF">-</span>
-                <small class="text-muted font-monospace" id="lblFacDocNum"></small>
             </div>
 
             <!-- Fecha Documento -->
@@ -221,8 +220,10 @@
                         <i class="bi bi-tag text-danger"></i> Tipo de Nota de Crédito <span class="text-danger">*</span>
                     </label>
                     <select id="cboTipoNC" class="form-select input-nc">
-                        <?php foreach ($tiposNC as $t): ?>
-                            <option value="<?= htmlspecialchars($t['code']) ?>"><?= htmlspecialchars($t['Name']) ?></option>
+                        <?php foreach ($tiposNC as $t): 
+                            $cVal = htmlspecialchars($t['code'] ?? $t['Code'] ?? '');
+                        ?>
+                            <option value="<?= $cVal ?>"><?= $cVal ? ($cVal . ' - ') : '' ?><?= htmlspecialchars($t['Name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -291,7 +292,7 @@
                         <th style="width:30%;">Descripción</th>
                         <th style="width:9%;" class="text-center" id="thCantOrig">Cant. Orig.</th>
                         <th style="width:10%;" class="text-center" id="thCantDoc">Cant. NC</th>
-                        <th style="width:10%;" class="text-end">Precio</th>
+                        <th style="width:11%;" class="text-end" title="Precio unitario facturado al paciente a acreditar">Precio Facturado</th>
                         <th style="width:8%;" class="text-center">% Desc</th>
                         <th style="width:7%;" class="text-center">ITBIS %</th>
                         <th style="width:12%;" class="text-end">Total Línea</th>
@@ -681,8 +682,8 @@ function cargarFacturaEnPantalla(res) {
     $('#lblFacCardName').text(facturaOrigen.CardName || '-');
     $('#lblFacCardCode').text(facturaOrigen.CardCode ? '(' + facturaOrigen.CardCode + ')' : '');
     $('#lblFacNit').text(facturaOrigen.U_FacNit || 'Sin RNC / Cédula');
-    $('#lblFacNCF').text(facturaOrigen.U_FACNUM || facturaOrigen.NumAtCard || ('DocNum: ' + facturaOrigen.DocNum));
-    $('#lblFacDocNum').text(facturaOrigen.NumAtCard ? 'DocNum: #' + facturaOrigen.DocNum : '');
+    $('#lblFacNCF').text(facturaOrigen.U_FACNUM || facturaOrigen.NumAtCard || (facturaOrigen.DocNum ? 'DocNum: ' + facturaOrigen.DocNum : 'ID: ' + facturaOrigen.C_DocEntry));
+    // No se muestra DocNum para evitar ruido (#null en facturas locales POS)
     $('#lblFacFecha').text(facturaOrigen.DocDateFmt || '-');
     $('#lblFacTotal').text('RD$ ' + parseFloat(facturaOrigen.DocTotal).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     $('#lblFacSaldoDisp').text('RD$ ' + saldoDisponible.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -772,7 +773,10 @@ function renderTablaNC() {
                        onblur="validarCantidadNC(${i}, this)">
                 ${qtyLabel}
             </td>
-            <td class="text-end font-monospace">RD$ ${formatCurrency(l.Price)}</td>
+            <td class="text-end font-monospace">
+                <div class="fw-bold text-dark">RD$ ${formatCurrency(l.Price)}</div>
+                ${(l.PriceBefDi && l.PriceBefDi > l.Price + 0.01) ? `<div class="text-muted" style="font-size:0.70rem;" title="Precio sin cobertura">Catálogo: RD$ ${formatCurrency(l.PriceBefDi)}</div>` : ''}
+            </td>
             <td class="text-center">
                 <input type="number" min="0" max="100" step="1"
                        id="inputDiscNC_${i}"
@@ -1066,7 +1070,7 @@ async function iniciarCargaLoteARS(facturasParam) {
                         LineNum:        parseInt(l.LineNum),
                         BaseLine:       parseInt(l.LineNum),
                         BaseEntry:      parseInt(fac.C_DocEntry),
-                        BaseDocNum:     fac.U_FACNUM || fac.NumAtCard || ('#' + fac.DocNum),
+                        BaseDocNum:     fac.U_FACNUM || fac.NumAtCard || (fac.DocNum ? '#' + fac.DocNum : 'ID: ' + fac.C_DocEntry),
                         ItemCode:       l.ItemCode,
                         Dscription:     l.Dscription,
                         Quantity:       parseFloat(l.QtyDisponible),
@@ -1096,7 +1100,7 @@ async function iniciarCargaLoteARS(facturasParam) {
     ajustarSerieNC(facturasLoteARS[0].factura.U_FACNUM || facturasLoteARS[0].factura.NumAtCard);
 
     if (facturasIncompatibles.length > 0) {
-        const nombresIncomp = facturasIncompatibles.map(f => `${f.U_FACNUM || f.NumAtCard || '#' + f.DocNum} (${f.CardName})`).join('\n- ');
+        const nombresIncomp = facturasIncompatibles.map(f => `${f.U_FACNUM || f.NumAtCard || (f.DocNum ? '#' + f.DocNum : 'ID: ' + f.C_DocEntry)} (${f.CardName})`).join('\n- ');
         alert(`Aviso de Agrupación Fiscal / Incompatibilidad:\n\nLas siguientes facturas pertenecen a otra ARS o a un tipo fiscal diferente y deben procesarse en una Nota de Crédito separada:\n- ${nombresIncomp}\n\nSe continuará con el grupo de: ${cardNameARS} (${serieTipoLote.toUpperCase()}).`);
     }
 
@@ -1111,7 +1115,7 @@ async function iniciarCargaLoteARS(facturasParam) {
     let tbodyFacHtml = '';
     facturasLoteARS.forEach(item => {
         const f = item.factura;
-        const ncfMostrar = f.U_FACNUM || f.NumAtCard || ('#' + f.DocNum);
+        const ncfMostrar = f.U_FACNUM || f.NumAtCard || (f.DocNum ? '#' + f.DocNum : 'ID: ' + f.C_DocEntry);
         tbodyFacHtml += `<tr>
             <td class="font-monospace fw-bold text-danger">${ncfMostrar}</td>
             <td>${f.DocDateFmt || '-'}</td>
@@ -1175,7 +1179,7 @@ function procesarNC() {
         return;
     }
 
-    if (!confirm(`¿Confirma emitir la Nota de Crédito por RD$ ${totalNC.toFixed(2)} sobre la factura ${facturaOrigen.NumAtCard || '#' + facturaOrigen.DocNum}?`)) {
+    if (!confirm(`¿Confirma emitir la Nota de Crédito por RD$ ${totalNC.toFixed(2)} sobre la factura ${facturaOrigen.NumAtCard || facturaOrigen.U_FACNUM || (facturaOrigen.DocNum ? '#' + facturaOrigen.DocNum : 'ID: ' + facturaOrigen.C_DocEntry)}?`)) {
         return;
     }
 
@@ -1200,6 +1204,7 @@ function procesarNC() {
             Quantity:      parseFloat(l.Quantity) || 0,
             QtyDisponible: parseFloat(l.QtyDisponible || 0),
             Price:         parseFloat(l.Price) || 0,
+            PriceBefDi:    parseFloat(l.PriceBefDi || l.Price) || 0,
             DiscPrcnt:     parseFloat(l.DiscPrcnt) || 0,
             VatPrcnt:      parseFloat(l.VatPrcnt) || 0,
             TaxCode:       String(l.TaxCode || ''),
@@ -1273,7 +1278,7 @@ function procesarNC() {
         return;
     }
 
-    if (!confirm(`¿Confirma emitir la Nota de Crédito por RD$ ${totalNC.toFixed(2)} sobre la factura ${facturaOrigen.NumAtCard || '#' + facturaOrigen.DocNum}?`)) {
+    if (!confirm(`¿Confirma emitir la Nota de Crédito por RD$ ${totalNC.toFixed(2)} sobre la factura ${facturaOrigen.NumAtCard || facturaOrigen.U_FACNUM || (facturaOrigen.DocNum ? '#' + facturaOrigen.DocNum : 'ID: ' + facturaOrigen.C_DocEntry)}?`)) {
         return;
     }
 
@@ -1364,7 +1369,7 @@ async function procesarColaLoteNC() {
         const itemFac = facturasLoteARS[i];
         const fac = itemFac.factura;
         const cDocEntry = parseInt(fac.C_DocEntry);
-        const numFactura = fac.NumAtCard || ('#' + fac.DocNum);
+        const numFactura = fac.NumAtCard || (fac.DocNum ? '#' + fac.DocNum : 'ID: ' + fac.C_DocEntry);
 
         const pct = Math.round(((i) / totalFacturas) * 100);
         $('#progreso_lote_bar').css('width', pct + '%');
